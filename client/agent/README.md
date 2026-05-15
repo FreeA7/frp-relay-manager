@@ -9,3 +9,5 @@ Planned responsibilities:
 - probe local ports on request
 - manage local frpc configuration
 - reload or restart frpc after forwarding rule changes
+
+For client setup instructions, see `docs/CLIENT_ONBOARDING.md`.
