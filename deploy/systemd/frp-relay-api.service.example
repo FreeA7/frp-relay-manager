@@ -1,0 +1,18 @@
+[Unit]
+Description=FRP Relay API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/src/frp_relay/server/backend
+EnvironmentFile=/src/frp_relay/.env
+ExecStart=/src/frp_relay/server/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8010
+Restart=on-failure
+RestartSec=5
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
+

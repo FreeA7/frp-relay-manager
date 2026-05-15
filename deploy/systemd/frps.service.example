@@ -1,0 +1,17 @@
+[Unit]
+Description=FRP Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/src/frp_relay/.env
+ExecStart=/usr/local/bin/frps -c /src/frp_relay/deploy/frp/frps.toml
+Restart=on-failure
+RestartSec=5
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
+
