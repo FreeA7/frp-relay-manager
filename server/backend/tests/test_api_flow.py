@@ -54,7 +54,7 @@ def test_admin_agent_forward_flow(tmp_path):
             "/api/agent/register",
             json={
                 "enrollment_token": enrollment.json()["token"],
-                "name": "devbox",
+                "name": "ignored-custom-name",
                 "hostname": "devbox",
                 "os": "Windows",
                 "ips": ["127.0.0.1"],
@@ -65,12 +65,20 @@ def test_admin_agent_forward_flow(tmp_path):
         client_id = registered.json()["client_id"]
         agent_headers = {"Authorization": "Bearer " + registered.json()["agent_token"]}
 
+        listed_after_register = client.get("/api/clients", headers=admin_headers)
+        assert listed_after_register.status_code == 200
+        assert listed_after_register.json()["items"][0]["name"] == "devbox"
+
         heartbeat = client.post(
             "/api/agent/heartbeat",
-            json={"hostname": "devbox", "os": "Windows", "ips": ["127.0.0.1"], "frpc_status": "running"},
+            json={"hostname": "renamed-devbox", "os": "Windows", "ips": ["127.0.0.1"], "frpc_status": "running"},
             headers=agent_headers,
         )
         assert heartbeat.status_code == 200
+
+        listed_after_heartbeat = client.get("/api/clients", headers=admin_headers)
+        assert listed_after_heartbeat.status_code == 200
+        assert listed_after_heartbeat.json()["items"][0]["name"] == "renamed-devbox"
 
         check = client.post(
             "/api/port-checks",

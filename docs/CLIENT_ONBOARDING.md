@@ -63,7 +63,6 @@ Edit `agent.env`:
 ```env
 FRP_RELAY_SERVER_URL=https://panel.tunnel.freea7.fun
 FRP_RELAY_ENROLLMENT_TOKEN=replace-with-token-from-admin
-FRP_RELAY_CLIENT_NAME=my-client-name
 FRP_RELAY_HEARTBEAT_INTERVAL_SECONDS=30
 FRP_RELAY_AGENT_STATE=agent-state.json
 FRP_RELAY_FRPC_CONFIG=frpc.generated.toml
@@ -72,6 +71,7 @@ FRP_RELAY_FRPC_RELOAD_CMD=
 
 For the first run, `FRP_RELAY_ENROLLMENT_TOKEN` is required. After successful
 registration, the agent writes `agent-state.json` and reuses its agent token.
+The relay client name is always the machine hostname.
 
 ## Register and Test Agent
 

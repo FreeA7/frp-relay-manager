@@ -52,7 +52,6 @@ class EnrollmentTokenResponse(BaseModel):
 
 class AgentRegisterRequest(BaseModel):
     enrollment_token: str
-    name: Optional[str] = None
     hostname: str
     os: str
     arch: Optional[str] = None
@@ -207,7 +206,6 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid enrollment token")
 
         client_id = str(uuid.uuid4())
-        name = payload.name or payload.hostname
         now = utc_iso()
         repo.execute(
             """
@@ -218,7 +216,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             """,
             (
                 client_id,
-                name,
+                payload.hostname,
                 payload.hostname,
                 payload.os,
                 payload.arch,
@@ -249,11 +247,12 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         repo.execute(
             """
             UPDATE clients
-            SET hostname = ?, os = ?, arch = ?, ips_json = ?, agent_version = ?,
+            SET name = ?, hostname = ?, os = ?, arch = ?, ips_json = ?, agent_version = ?,
                 frpc_status = ?, status = 'online', last_seen_at = ?
             WHERE client_id = ?
             """,
             (
+                payload.hostname,
                 payload.hostname,
                 payload.os,
                 payload.arch,

@@ -24,7 +24,6 @@ class AgentConfig:
     enrollment_token: Optional[str]
     agent_token: Optional[str]
     client_id: Optional[str]
-    name: Optional[str]
     heartbeat_interval_seconds: int
     state_path: Path
     frpc_config_path: Path
@@ -45,7 +44,6 @@ def load_config(path: Path) -> AgentConfig:
         enrollment_token=get("FRP_RELAY_ENROLLMENT_TOKEN", ""),
         agent_token=get("FRP_RELAY_AGENT_TOKEN", state.get("agent_token", "")),
         client_id=get("FRP_RELAY_CLIENT_ID", state.get("client_id", "")),
-        name=get("FRP_RELAY_CLIENT_NAME", socket.gethostname()),
         heartbeat_interval_seconds=int(get("FRP_RELAY_HEARTBEAT_INTERVAL_SECONDS", "30")),
         state_path=state_path,
         frpc_config_path=resolve_config_path(path, get("FRP_RELAY_FRPC_CONFIG", "frpc.generated.toml")),
@@ -105,7 +103,6 @@ def request_json(method: str, url: str, payload: Optional[Dict[str, Any]] = None
 
 def machine_payload(config: AgentConfig) -> Dict[str, Any]:
     return {
-        "name": config.name,
         "hostname": socket.gethostname(),
         "os": "{} {}".format(platform.system(), platform.release()).strip(),
         "arch": platform.machine(),
