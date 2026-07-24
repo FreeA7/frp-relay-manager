@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import ipaddress
 import re
+import secrets
 import uuid
 from contextlib import asynccontextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
@@ -26,6 +28,8 @@ from .security import (
 PROTOCOLS = {"tcp", "udp", "http"}
 FORWARD_STATUSES = {"active", "paused"}
 RESERVED_PORTS = {22, 80, 443, 7000, 7500, 8000, 8010}
+CLIENT_ONLINE_GRACE_SECONDS = 120
+DEFAULT_SSH_FORWARD_NOTE = "默认 SSH"
 
 
 class LoginRequest(BaseModel):
@@ -50,6 +54,14 @@ class EnrollmentTokenResponse(BaseModel):
     expires_at: str
 
 
+class AgentHardware(BaseModel):
+    cpu_model: Optional[str] = None
+    gpu_model: Optional[str] = None
+    memory_total_bytes: Optional[int] = Field(default=None, ge=0)
+    disk_total_bytes: Optional[int] = Field(default=None, ge=0)
+    os_version: Optional[str] = None
+
+
 class AgentRegisterRequest(BaseModel):
     enrollment_token: str
     hostname: str
@@ -57,6 +69,7 @@ class AgentRegisterRequest(BaseModel):
     arch: Optional[str] = None
     ips: List[str] = Field(default_factory=list)
     agent_version: Optional[str] = None
+    hardware: Optional[AgentHardware] = None
 
 
 class AgentRegisterResponse(BaseModel):
@@ -71,7 +84,7 @@ class AgentHeartbeatRequest(BaseModel):
     arch: Optional[str] = None
     ips: List[str] = Field(default_factory=list)
     agent_version: Optional[str] = None
-    frpc_status: str = "unknown"
+    hardware: Optional[AgentHardware] = None
 
 
 class PortCheckCreate(BaseModel):
@@ -163,9 +176,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         clients = repo.fetchall("SELECT * FROM clients ORDER BY last_seen_at DESC, created_at DESC")
         forwards = repo.fetchall("SELECT * FROM forwards ORDER BY created_at DESC")
         pending_checks = repo.fetchall("SELECT * FROM port_check_tasks WHERE status = 'pending' ORDER BY created_at DESC")
+        formatted_clients = [format_client(client) for client in clients]
         return {
             "client_count": len(clients),
-            "online_client_count": len([client for client in clients if client["status"] == "online"]),
+            "online_client_count": len([client for client in formatted_clients if client["status"] == "online"]),
             "forward_count": len(forwards),
             "pending_port_check_count": len(pending_checks),
             "public_ip": settings_dep.public_ip,
@@ -194,6 +208,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     @app.post("/api/agent/register", response_model=AgentRegisterResponse)
     def register_agent(
         payload: AgentRegisterRequest,
+        request: Request,
         repo: Repository = Depends(get_repo),
         settings_dep: Settings = Depends(get_settings),
     ) -> AgentRegisterResponse:
@@ -207,12 +222,16 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
         client_id = str(uuid.uuid4())
         now = utc_iso()
+        remote_ip = request_remote_ip(request)
+        hardware = hardware_values(payload.hardware, now)
         repo.execute(
             """
             INSERT INTO clients (
                 client_id, name, hostname, os, arch, ips_json, agent_version,
-                frpc_status, status, last_seen_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                cpu_model, gpu_model, memory_total_bytes, disk_total_bytes,
+                os_version, hardware_updated_at, status, last_seen_at,
+                last_remote_ip, last_remote_ip_seen_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 client_id,
@@ -222,9 +241,16 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 payload.arch,
                 json.dumps(payload.ips),
                 payload.agent_version,
-                "unknown",
+                hardware["cpu_model"],
+                hardware["gpu_model"],
+                hardware["memory_total_bytes"],
+                hardware["disk_total_bytes"],
+                hardware["os_version"],
+                hardware["hardware_updated_at"],
                 "online",
                 now,
+                remote_ip,
+                now if remote_ip else None,
                 now,
             ),
         )
@@ -240,29 +266,65 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     @app.post("/api/agent/heartbeat")
     def agent_heartbeat(
         payload: AgentHeartbeatRequest,
+        request: Request,
         repo: Repository = Depends(get_repo),
         agent: Dict[str, Any] = Depends(require_agent),
     ) -> Dict[str, str]:
         now = utc_iso()
-        repo.execute(
-            """
-            UPDATE clients
-            SET name = ?, hostname = ?, os = ?, arch = ?, ips_json = ?, agent_version = ?,
-                frpc_status = ?, status = 'online', last_seen_at = ?
-            WHERE client_id = ?
-            """,
-            (
-                payload.hostname,
-                payload.hostname,
-                payload.os,
-                payload.arch,
-                json.dumps(payload.ips),
-                payload.agent_version,
-                payload.frpc_status,
-                now,
-                agent["sub"],
-            ),
-        )
+        remote_ip = request_remote_ip(request)
+        hardware = hardware_values(payload.hardware, now)
+        if hardware["hardware_updated_at"]:
+            repo.execute(
+                """
+                UPDATE clients
+                SET name = ?, hostname = ?, os = ?, arch = ?, ips_json = ?, agent_version = ?,
+                    cpu_model = ?, gpu_model = ?, memory_total_bytes = ?, disk_total_bytes = ?,
+                    os_version = ?, hardware_updated_at = ?,
+                    status = 'online', last_seen_at = ?,
+                    last_remote_ip = ?, last_remote_ip_seen_at = ?
+                WHERE client_id = ?
+                """,
+                (
+                    payload.hostname,
+                    payload.hostname,
+                    payload.os,
+                    payload.arch,
+                    json.dumps(payload.ips),
+                    payload.agent_version,
+                    hardware["cpu_model"],
+                    hardware["gpu_model"],
+                    hardware["memory_total_bytes"],
+                    hardware["disk_total_bytes"],
+                    hardware["os_version"],
+                    hardware["hardware_updated_at"],
+                    now,
+                    remote_ip,
+                    now if remote_ip else None,
+                    agent["sub"],
+                ),
+            )
+        else:
+            repo.execute(
+                """
+                UPDATE clients
+                SET name = ?, hostname = ?, os = ?, arch = ?, ips_json = ?, agent_version = ?,
+                    status = 'online', last_seen_at = ?,
+                    last_remote_ip = ?, last_remote_ip_seen_at = ?
+                WHERE client_id = ?
+                """,
+                (
+                    payload.hostname,
+                    payload.hostname,
+                    payload.os,
+                    payload.arch,
+                    json.dumps(payload.ips),
+                    payload.agent_version,
+                    now,
+                    remote_ip,
+                    now if remote_ip else None,
+                    agent["sub"],
+                ),
+            )
         return {"status": "ok"}
 
     @app.get("/api/agent/tasks")
@@ -387,6 +449,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         else:
             subdomain = ensure_unique_subdomain(repo, subdomain or default_subdomain(payload.client_id, protocol, payload.local_port))
 
+        note = normalized_forward_note(protocol, payload.local_port, payload.note)
         forward_id = str(uuid.uuid4())
         now = utc_iso()
         repo.execute(
@@ -404,7 +467,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 payload.local_port,
                 remote_port,
                 subdomain,
-                payload.note,
+                note,
                 now,
                 now,
             ),
@@ -496,10 +559,20 @@ def allocate_remote_port(repo: Repository, settings: Settings) -> int:
         int(row["remote_port"])
         for row in repo.fetchall("SELECT remote_port FROM forwards WHERE remote_port IS NOT NULL")
     }
-    for port in range(settings.remote_port_min, settings.remote_port_max + 1):
-        if port not in used and port not in RESERVED_PORTS:
-            return port
+    candidates = [
+        port
+        for port in range(settings.remote_port_min, settings.remote_port_max + 1)
+        if port not in used and port not in RESERVED_PORTS
+    ]
+    if candidates:
+        return candidates[secrets.randbelow(len(candidates))]
     raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No remote ports available")
+
+
+def normalized_forward_note(protocol: str, local_port: int, note: Optional[str]) -> Optional[str]:
+    if protocol == "tcp" and local_port == 22:
+        return DEFAULT_SSH_FORWARD_NOTE
+    return clean_optional_text(note)
 
 
 def validate_remote_port(repo: Repository, settings: Settings, remote_port: Optional[int]) -> None:
@@ -540,6 +613,83 @@ def is_expired(value: Optional[str]) -> bool:
     return value < utc_iso()
 
 
+def hardware_values(hardware: Optional[AgentHardware], updated_at: str) -> Dict[str, Any]:
+    if hardware is None:
+        return {
+            "cpu_model": None,
+            "gpu_model": None,
+            "memory_total_bytes": None,
+            "disk_total_bytes": None,
+            "os_version": None,
+            "hardware_updated_at": None,
+        }
+
+    values = {
+        "cpu_model": clean_optional_text(hardware.cpu_model),
+        "gpu_model": clean_optional_text(hardware.gpu_model),
+        "memory_total_bytes": hardware.memory_total_bytes,
+        "disk_total_bytes": hardware.disk_total_bytes,
+        "os_version": clean_optional_text(hardware.os_version),
+    }
+    has_value = any(value not in {None, ""} for value in values.values())
+    return {**values, "hardware_updated_at": updated_at if has_value else None}
+
+
+def clean_optional_text(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    text = value.strip()
+    return text or None
+
+
+def request_remote_ip(request: Request) -> Optional[str]:
+    x_real_ip = normalize_ip_candidate(request.headers.get("x-real-ip", ""))
+    if x_real_ip:
+        return x_real_ip
+
+    for candidate in request.headers.get("x-forwarded-for", "").split(","):
+        forwarded_ip = normalize_ip_candidate(candidate)
+        if forwarded_ip:
+            return forwarded_ip
+
+    if request.client and request.client.host:
+        return normalize_ip_candidate(request.client.host)
+    return None
+
+
+def normalize_ip_candidate(value: str) -> Optional[str]:
+    raw = value.strip()
+    if not raw:
+        return None
+    if raw.startswith("[") and "]" in raw:
+        raw = raw[1 : raw.find("]")]
+    elif raw.count(":") == 1 and "." in raw.rsplit(":", 1)[0] and raw.rsplit(":", 1)[1].isdigit():
+        raw = raw.rsplit(":", 1)[0]
+    try:
+        return str(ipaddress.ip_address(raw))
+    except ValueError:
+        return None
+
+
+def current_client_status(row: Dict[str, Any]) -> str:
+    last_seen_at = row.get("last_seen_at")
+    if not last_seen_at:
+        return "offline"
+
+    try:
+        last_seen = datetime.fromisoformat(last_seen_at)
+    except ValueError:
+        return "offline"
+
+    if last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+
+    age_seconds = (datetime.now(timezone.utc) - last_seen).total_seconds()
+    if age_seconds <= CLIENT_ONLINE_GRACE_SECONDS:
+        return "online"
+    return "offline"
+
+
 def utc_datetime_plus(hours: int) -> str:
     from datetime import timedelta
 
@@ -557,9 +707,18 @@ def format_client(row: Dict[str, Any]) -> Dict[str, Any]:
         "arch": row["arch"],
         "ips": json.loads(row["ips_json"] or "[]"),
         "agent_version": row["agent_version"],
-        "frpc_status": row["frpc_status"],
-        "status": row["status"],
+        "hardware": {
+            "cpu_model": row.get("cpu_model"),
+            "gpu_model": row.get("gpu_model"),
+            "memory_total_bytes": row.get("memory_total_bytes"),
+            "disk_total_bytes": row.get("disk_total_bytes"),
+            "os_version": row.get("os_version"),
+            "updated_at": row.get("hardware_updated_at"),
+        },
+        "status": current_client_status(row),
         "last_seen_at": row["last_seen_at"],
+        "last_remote_ip": row.get("last_remote_ip"),
+        "last_remote_ip_seen_at": row.get("last_remote_ip_seen_at"),
         "created_at": row["created_at"],
     }
 

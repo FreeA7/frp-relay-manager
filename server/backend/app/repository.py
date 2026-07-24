@@ -46,9 +46,16 @@ class Repository:
                     arch TEXT,
                     ips_json TEXT NOT NULL DEFAULT '[]',
                     agent_version TEXT,
-                    frpc_status TEXT NOT NULL DEFAULT 'unknown',
+                    cpu_model TEXT,
+                    gpu_model TEXT,
+                    memory_total_bytes INTEGER,
+                    disk_total_bytes INTEGER,
+                    os_version TEXT,
+                    hardware_updated_at TEXT,
                     status TEXT NOT NULL DEFAULT 'offline',
                     last_seen_at TEXT,
+                    last_remote_ip TEXT,
+                    last_remote_ip_seen_at TEXT,
                     created_at TEXT NOT NULL
                 );
 
@@ -90,6 +97,26 @@ class Repository:
                 );
                 """
             )
+            self.ensure_columns(
+                db,
+                "clients",
+                {
+                    "last_remote_ip": "TEXT",
+                    "last_remote_ip_seen_at": "TEXT",
+                    "cpu_model": "TEXT",
+                    "gpu_model": "TEXT",
+                    "memory_total_bytes": "INTEGER",
+                    "disk_total_bytes": "INTEGER",
+                    "os_version": "TEXT",
+                    "hardware_updated_at": "TEXT",
+                },
+            )
+
+    def ensure_columns(self, db: sqlite3.Connection, table: str, columns: Dict[str, str]) -> None:
+        existing = {row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
+        for name, definition in columns.items():
+            if name not in existing:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
     def ensure_admin(self, user_id: str, email: str, password: str, reset_password: bool = False) -> None:
         existing = self.fetchone("SELECT id FROM users WHERE email = ?", (email,))
@@ -123,4 +150,3 @@ class Repository:
     def executemany(self, sql: str, rows: Iterable[Tuple[Any, ...]]) -> None:
         with self.connect() as db:
             db.executemany(sql, rows)
-

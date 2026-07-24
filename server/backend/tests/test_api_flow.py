@@ -1,9 +1,11 @@
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+from app.security import utc_now
 
 
 def make_settings(tmp_path: Path) -> Settings:
@@ -59,7 +61,15 @@ def test_admin_agent_forward_flow(tmp_path):
                 "os": "Windows",
                 "ips": ["127.0.0.1"],
                 "agent_version": "test",
+                "hardware": {
+                    "cpu_model": "Intel Core i5",
+                    "gpu_model": "Intel UHD",
+                    "memory_total_bytes": 17179869184,
+                    "disk_total_bytes": 512110190592,
+                    "os_version": "Windows 11 Pro",
+                },
             },
+            headers={"X-Real-IP": "203.0.113.10"},
         )
         assert registered.status_code == 200
         client_id = registered.json()["client_id"]
@@ -68,17 +78,37 @@ def test_admin_agent_forward_flow(tmp_path):
         listed_after_register = client.get("/api/clients", headers=admin_headers)
         assert listed_after_register.status_code == 200
         assert listed_after_register.json()["items"][0]["name"] == "devbox"
+        assert listed_after_register.json()["items"][0]["last_remote_ip"] == "203.0.113.10"
+        assert listed_after_register.json()["items"][0]["hardware"]["cpu_model"] == "Intel Core i5"
+        assert listed_after_register.json()["items"][0]["hardware"]["memory_total_bytes"] == 17179869184
 
         heartbeat = client.post(
             "/api/agent/heartbeat",
-            json={"hostname": "renamed-devbox", "os": "Windows", "ips": ["127.0.0.1"], "frpc_status": "running"},
-            headers=agent_headers,
+            json={
+                "hostname": "renamed-devbox",
+                "os": "Windows",
+                "ips": ["127.0.0.1"],
+                "hardware": {
+                    "cpu_model": "Intel Core i7",
+                    "gpu_model": "NVIDIA RTX 4060",
+                    "memory_total_bytes": 34359738368,
+                    "disk_total_bytes": 1024209543168,
+                    "os_version": "Windows 11 Pro 24H2",
+                },
+            },
+            headers={**agent_headers, "X-Real-IP": "203.0.113.11"},
         )
         assert heartbeat.status_code == 200
 
         listed_after_heartbeat = client.get("/api/clients", headers=admin_headers)
         assert listed_after_heartbeat.status_code == 200
         assert listed_after_heartbeat.json()["items"][0]["name"] == "renamed-devbox"
+        assert listed_after_heartbeat.json()["items"][0]["last_remote_ip"] == "203.0.113.11"
+        assert listed_after_heartbeat.json()["items"][0]["last_remote_ip_seen_at"]
+        assert listed_after_heartbeat.json()["items"][0]["hardware"]["cpu_model"] == "Intel Core i7"
+        assert listed_after_heartbeat.json()["items"][0]["hardware"]["gpu_model"] == "NVIDIA RTX 4060"
+        assert listed_after_heartbeat.json()["items"][0]["hardware"]["disk_total_bytes"] == 1024209543168
+        assert listed_after_heartbeat.json()["items"][0]["hardware"]["updated_at"]
 
         check = client.post(
             "/api/port-checks",
@@ -105,9 +135,57 @@ def test_admin_agent_forward_flow(tmp_path):
             headers=admin_headers,
         )
         assert forward.status_code == 200
-        assert forward.json()["remote_port"] == 20000
-        assert "45.141.136.217:20000" in forward.json()["public_addresses"]
+        remote_port = forward.json()["remote_port"]
+        assert 20000 <= remote_port <= 20010
+        assert forward.json()["note"] == "默认 SSH"
+        assert f"45.141.136.217:{remote_port}" in forward.json()["public_addresses"]
 
         tasks_after_forward = client.get("/api/agent/tasks", headers=agent_headers)
         assert tasks_after_forward.status_code == 200
-        assert tasks_after_forward.json()["forwards"][0]["remote_port"] == 20000
+        assert tasks_after_forward.json()["forwards"][0]["remote_port"] == remote_port
+
+
+def test_stale_heartbeat_is_reported_offline(tmp_path):
+    app = create_app(make_settings(tmp_path))
+
+    with TestClient(app) as client:
+        login = client.post(
+            "/api/auth/login",
+            json={"email": "freea7@futurememetech.com", "password": "test-password"},
+        )
+        assert login.status_code == 200
+        admin_headers = {"Authorization": "Bearer " + login.json()["access_token"]}
+
+        enrollment = client.post(
+            "/api/enrollment-tokens",
+            json={"label": "stale test", "expires_in_hours": 1},
+            headers=admin_headers,
+        )
+        assert enrollment.status_code == 200
+
+        registered = client.post(
+            "/api/agent/register",
+            json={
+                "enrollment_token": enrollment.json()["token"],
+                "hostname": "ali",
+                "os": "Linux",
+                "ips": ["127.0.0.1"],
+            },
+        )
+        assert registered.status_code == 200
+        client_id = registered.json()["client_id"]
+
+        stale_seen_at = (utc_now() - timedelta(minutes=10)).isoformat()
+        app.state.repo.execute(
+            "UPDATE clients SET last_seen_at = ?, status = 'online' WHERE client_id = ?",
+            (stale_seen_at, client_id),
+        )
+
+        listed = client.get("/api/clients", headers=admin_headers)
+        assert listed.status_code == 200
+        assert listed.json()["items"][0]["status"] == "offline"
+
+        dashboard = client.get("/api/dashboard", headers=admin_headers)
+        assert dashboard.status_code == 200
+        assert dashboard.json()["client_count"] == 1
+        assert dashboard.json()["online_client_count"] == 0

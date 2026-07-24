@@ -4,6 +4,8 @@ import argparse
 import json
 import os
 import platform
+import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -15,7 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-AGENT_VERSION = "0.1.0"
+AGENT_VERSION = "0.3.0"
 
 
 @dataclass
@@ -28,6 +30,7 @@ class AgentConfig:
     state_path: Path
     frpc_config_path: Path
     frpc_reload_cmd: Optional[str]
+    hardware: Dict[str, Any]
 
 
 def load_config(path: Path) -> AgentConfig:
@@ -48,7 +51,185 @@ def load_config(path: Path) -> AgentConfig:
         state_path=state_path,
         frpc_config_path=resolve_config_path(path, get("FRP_RELAY_FRPC_CONFIG", "frpc.generated.toml")),
         frpc_reload_cmd=get("FRP_RELAY_FRPC_RELOAD_CMD", ""),
+        hardware=hardware_from_config(get),
     )
+
+
+def hardware_from_config(get, detected: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    hardware = dict(detect_hardware() if detected is None else detected)
+    text_fields = {
+        "FRP_RELAY_HARDWARE_CPU_MODEL": "cpu_model",
+        "FRP_RELAY_HARDWARE_GPU_MODEL": "gpu_model",
+        "FRP_RELAY_HARDWARE_OS_VERSION": "os_version",
+    }
+    integer_fields = {
+        "FRP_RELAY_HARDWARE_MEMORY_TOTAL_BYTES": "memory_total_bytes",
+        "FRP_RELAY_HARDWARE_DISK_TOTAL_BYTES": "disk_total_bytes",
+    }
+    for env_name, payload_name in text_fields.items():
+        value = get(env_name, "").strip()
+        if value:
+            hardware[payload_name] = value
+    for env_name, payload_name in integer_fields.items():
+        value = get(env_name, "").strip()
+        if value:
+            try:
+                parsed = int(value)
+            except ValueError:
+                continue
+            if parsed >= 0:
+                hardware[payload_name] = parsed
+    return hardware
+
+
+def detect_hardware() -> Dict[str, Any]:
+    detected = {
+        "cpu_model": detect_cpu_model(),
+        "gpu_model": detect_gpu_model(),
+        "memory_total_bytes": detect_memory_total_bytes(),
+        "disk_total_bytes": detect_disk_total_bytes(),
+        "os_version": detect_os_version(),
+    }
+    return {key: value for key, value in detected.items() if value not in {None, ""}}
+
+
+def detect_cpu_model() -> str:
+    if sys.platform.startswith("linux"):
+        try:
+            fields: Dict[str, str] = {}
+            for raw_line in Path("/proc/cpuinfo").read_text(encoding="utf-8", errors="replace").splitlines():
+                if ":" not in raw_line:
+                    continue
+                key, value = raw_line.split(":", 1)
+                fields.setdefault(key.strip().lower(), value.strip())
+            for key in ("model name", "hardware", "processor"):
+                if fields.get(key):
+                    return fields[key]
+        except OSError:
+            pass
+    elif sys.platform == "darwin":
+        value = command_output(["sysctl", "-n", "machdep.cpu.brand_string"])
+        if value:
+            return value
+    elif os.name == "nt":
+        value = command_output(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                "(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Name)",
+            ]
+        )
+        if value:
+            return value
+
+    return platform.processor().strip()
+
+
+def detect_gpu_model() -> str:
+    models: List[str] = []
+    if sys.platform.startswith("linux"):
+        output = command_output(["lspci", "-mm"])
+        for raw_line in output.splitlines():
+            try:
+                fields = shlex.split(raw_line)
+            except ValueError:
+                continue
+            if len(fields) < 4 or not any(label in fields[1].lower() for label in ("vga", "3d", "display")):
+                continue
+            model = " ".join(part for part in (fields[2].strip(), fields[3].strip()) if part)
+            if model and model not in models:
+                models.append(model)
+    elif sys.platform == "darwin":
+        output = command_output(["system_profiler", "SPDisplaysDataType"])
+        for raw_line in output.splitlines():
+            if "Chipset Model:" not in raw_line:
+                continue
+            model = raw_line.split("Chipset Model:", 1)[1].strip()
+            if model and model not in models:
+                models.append(model)
+    elif os.name == "nt":
+        output = command_output(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                "(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) -join '; '",
+            ]
+        )
+        if output:
+            models.append(output)
+    return "; ".join(models)
+
+
+def detect_memory_total_bytes() -> Optional[int]:
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            class MemoryStatus(ctypes.Structure):
+                _fields_ = [
+                    ("length", ctypes.c_ulong),
+                    ("memory_load", ctypes.c_ulong),
+                    ("total_physical", ctypes.c_ulonglong),
+                    ("available_physical", ctypes.c_ulonglong),
+                    ("total_page_file", ctypes.c_ulonglong),
+                    ("available_page_file", ctypes.c_ulonglong),
+                    ("total_virtual", ctypes.c_ulonglong),
+                    ("available_virtual", ctypes.c_ulonglong),
+                    ("available_extended_virtual", ctypes.c_ulonglong),
+                ]
+
+            status = MemoryStatus()
+            status.length = ctypes.sizeof(MemoryStatus)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return int(status.total_physical)
+        except (AttributeError, OSError):
+            return None
+
+    try:
+        page_size = int(os.sysconf("SC_PAGE_SIZE"))
+        page_count = int(os.sysconf("SC_PHYS_PAGES"))
+        total = page_size * page_count
+        return total if total > 0 else None
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+
+
+def detect_disk_total_bytes() -> Optional[int]:
+    try:
+        filesystem_root = Path.home().anchor or os.path.abspath(os.sep)
+        total = int(shutil.disk_usage(filesystem_root).total)
+        return total if total > 0 else None
+    except OSError:
+        return None
+
+
+def detect_os_version() -> str:
+    if sys.platform.startswith("linux"):
+        try:
+            release = platform.freedesktop_os_release()
+            value = release.get("PRETTY_NAME") or release.get("NAME")
+            if value:
+                return value.strip()
+        except (AttributeError, OSError):
+            pass
+    return platform.platform(aliased=True).strip()
+
+
+def command_output(command: List[str]) -> str:
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=8,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
 
 
 def resolve_config_path(config_path: Path, value: str) -> Path:
@@ -68,8 +249,15 @@ def read_env_file(path: Path) -> Dict[str, str]:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip('"').strip("'")
+        values[key.strip()] = parse_env_value(value)
     return values
+
+
+def parse_env_value(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1]
+    return value
 
 
 def read_json(path: Path) -> Dict[str, Any]:
@@ -102,13 +290,16 @@ def request_json(method: str, url: str, payload: Optional[Dict[str, Any]] = None
 
 
 def machine_payload(config: AgentConfig) -> Dict[str, Any]:
-    return {
+    payload = {
         "hostname": socket.gethostname(),
         "os": "{} {}".format(platform.system(), platform.release()).strip(),
         "arch": platform.machine(),
         "ips": local_ips(),
         "agent_version": AGENT_VERSION,
     }
+    if config.hardware:
+        payload["hardware"] = config.hardware
+    return payload
 
 
 def local_ips() -> List[str]:
@@ -170,13 +361,54 @@ def sync_frpc_config(config: AgentConfig, frpc: Dict[str, Any], forwards: List[D
 
     rendered = render_frpc_config(frpc, forwards)
     current = config.frpc_config_path.read_text(encoding="utf-8") if config.frpc_config_path.exists() else ""
-    if current == rendered:
+    config_changed = current != rendered
+    pending_path = frpc_reload_pending_path(config.frpc_config_path)
+
+    if config_changed:
+        config.frpc_config_path.parent.mkdir(parents=True, exist_ok=True)
+        if config.frpc_reload_cmd:
+            pending_path.touch()
+        write_text_atomic(config.frpc_config_path, rendered)
+
+    if not config.frpc_reload_cmd or not pending_path.exists():
         return
 
-    config.frpc_config_path.parent.mkdir(parents=True, exist_ok=True)
-    config.frpc_config_path.write_text(rendered, encoding="utf-8")
-    if config.frpc_reload_cmd:
-        subprocess.run(config.frpc_reload_cmd, shell=True, check=False)
+    run_frpc_reload(config.frpc_reload_cmd)
+    pending_path.unlink(missing_ok=True)
+
+
+def frpc_reload_pending_path(config_path: Path) -> Path:
+    return config_path.with_name(config_path.name + ".reload-pending")
+
+
+def write_text_atomic(path: Path, content: str) -> None:
+    temporary_path = path.with_name(".{}.{}.tmp".format(path.name, os.getpid()))
+    try:
+        temporary_path.write_text(content, encoding="utf-8")
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def run_frpc_reload(command: str) -> None:
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError("frpc reload command could not complete: {}".format(exc)) from exc
+
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "no output").strip()[:500]
+        raise RuntimeError(
+            "frpc reload command failed with exit code {}: {}".format(result.returncode, detail)
+        )
 
 
 def render_frpc_config(frpc: Dict[str, Any], forwards: List[Dict[str, Any]]) -> str:

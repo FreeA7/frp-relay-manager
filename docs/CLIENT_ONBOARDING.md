@@ -67,11 +67,20 @@ FRP_RELAY_HEARTBEAT_INTERVAL_SECONDS=30
 FRP_RELAY_AGENT_STATE=agent-state.json
 FRP_RELAY_FRPC_CONFIG=frpc.generated.toml
 FRP_RELAY_FRPC_RELOAD_CMD=
+FRP_RELAY_HARDWARE_CPU_MODEL=
+FRP_RELAY_HARDWARE_GPU_MODEL=
+FRP_RELAY_HARDWARE_MEMORY_TOTAL_BYTES=
+FRP_RELAY_HARDWARE_DISK_TOTAL_BYTES=
+FRP_RELAY_HARDWARE_OS_VERSION=
 ```
 
 For the first run, `FRP_RELAY_ENROLLMENT_TOKEN` is required. After successful
 registration, the agent writes `agent-state.json` and reuses its agent token.
-The relay client name is always the machine hostname.
+The relay client name is always the machine hostname. The agent automatically
+collects CPU, GPU/display controller, total memory, root filesystem capacity,
+and OS version. The optional hardware fields override auto-detection when set
+and are displayed in the relay panel after the next registration or heartbeat.
+Memory and disk values use bytes.
 
 ## Register and Test Agent
 
@@ -92,6 +101,7 @@ Expected results:
 - `agent-state.json` is created.
 - `frpc.generated.toml` is created.
 - The admin panel shows the client as online.
+- The admin panel shows CPU, GPU/display controller, memory, disk, and OS values.
 
 Run continuously:
 
@@ -129,6 +139,17 @@ Keep both processes running:
 
 The agent updates `frpc.generated.toml` when forwarding rules change. Restart or
 reload `frpc` after config changes unless `FRP_RELAY_FRPC_RELOAD_CMD` is set.
+For a Linux systemd service configured with `Restart=always`, the agent can
+terminate only the managed frpc process and let systemd start it with the new
+configuration:
+
+```env
+FRP_RELAY_FRPC_RELOAD_CMD=pkill -f '[f]rpc -c /opt/frp-relay-agent/frpc.generated.toml'
+```
+
+Agent `0.3.0` keeps the command's inner quotes intact. If the command fails, the
+agent logs the error and leaves `frpc.generated.toml.reload-pending` in place so
+the next polling cycle retries the reload.
 
 ## Configure a Forward
 
