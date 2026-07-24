@@ -115,6 +115,26 @@ Linux/macOS:
 python3 ./frp_relay_agent.py --config ./agent.env
 ```
 
+### Linux systemd deployment
+
+Linux compute and mirror hosts use the shared deployment package under
+`client/deploy/`. Install `frpc` at `/usr/local/bin/frpc`, stage the complete
+`client/` directory on the target, then run:
+
+```bash
+sudo client/deploy/install-client.sh
+```
+
+The installer preserves an existing `/etc/frp-relay-agent/agent.env`. On a new
+machine, edit that file with the one-time enrollment token, register once, and
+enable both services:
+
+```bash
+sudo python3 /opt/frp-relay-agent/frp_relay_agent.py \
+  --config /etc/frp-relay-agent/agent.env --once
+sudo systemctl enable --now frp-relay-agent frp-relay-frpc
+```
+
 ## Start frpc
 
 After the administrator creates a forwarding rule, run `frpc` with the generated

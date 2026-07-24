@@ -1,0 +1,17 @@
+[Unit]
+Description=FRP Relay Client Agent
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/frp-relay-agent/agent.env
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/frp-relay-agent
+ExecStart=/usr/bin/python3 /opt/frp-relay-agent/frp_relay_agent.py --config /etc/frp-relay-agent/agent.env
+Restart=on-failure
+RestartSec=5
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

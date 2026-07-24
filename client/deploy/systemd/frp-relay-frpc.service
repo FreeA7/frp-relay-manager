@@ -1,0 +1,17 @@
+[Unit]
+Description=FRP Relay frpc
+After=network-online.target frp-relay-agent.service
+Wants=network-online.target frp-relay-agent.service
+ConditionPathExists=/etc/frp-relay-agent/frpc.generated.toml
+
+[Service]
+Type=simple
+WorkingDirectory=/etc/frp-relay-agent
+ExecStart=/usr/local/bin/frpc -c /etc/frp-relay-agent/frpc.generated.toml
+Restart=on-failure
+RestartSec=5
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
