@@ -31,6 +31,7 @@ def make_settings(tmp_path: Path) -> Settings:
         frps_token="frps-token",
         remote_port_min=20000,
         remote_port_max=20010,
+        fleet_read_token="fleet-read-token-0123456789abcdef",
     )
 
 
@@ -61,6 +62,15 @@ def test_admin_agent_forward_flow(tmp_path):
                 "os": "Windows",
                 "ips": ["127.0.0.1"],
                 "agent_version": "test",
+                "inventory": {
+                    "device_id": "da-compute_terminal-stable",
+                    "device_type": "compute_terminal",
+                    "agent_protocol_version": "2",
+                    "frpc_version": "0.68.1",
+                    "frpc_status": "running",
+                    "frp_client_release": {"product": "frp-client", "version": "0.4.0-rc.1"},
+                    "tenant_device_uuid": "tenant-device-uuid",
+                },
                 "hardware": {
                     "cpu_model": "Intel Core i5",
                     "gpu_model": "Intel UHD",
@@ -82,6 +92,19 @@ def test_admin_agent_forward_flow(tmp_path):
         assert listed_after_register.json()["items"][0]["hardware"]["cpu_model"] == "Intel Core i5"
         assert listed_after_register.json()["items"][0]["hardware"]["memory_total_bytes"] == 17179869184
 
+        fleet_without_token = client.get("/api/integrations/fleet/clients")
+        assert fleet_without_token.status_code == 401
+        fleet_snapshot = client.get(
+            "/api/integrations/fleet/clients",
+            headers={"Authorization": "Bearer fleet-read-token-0123456789abcdef"},
+        )
+        assert fleet_snapshot.status_code == 200
+        fleet_client = fleet_snapshot.json()["clients"][0]
+        assert fleet_client["device_id"] == "da-compute_terminal-stable"
+        assert fleet_client["frpc_version"] == "0.68.1"
+        assert fleet_client["frp_client_release"] == "0.4.0-rc.1"
+        assert fleet_client["tenant_device_uuid"] == "tenant-device-uuid"
+
         heartbeat = client.post(
             "/api/agent/heartbeat",
             json={
@@ -94,6 +117,16 @@ def test_admin_agent_forward_flow(tmp_path):
                     "memory_total_bytes": 34359738368,
                     "disk_total_bytes": 1024209543168,
                     "os_version": "Windows 11 Pro 24H2",
+                },
+                "inventory": {
+                    "device_id": "da-compute_terminal-stable",
+                    "device_type": "compute_terminal",
+                    "agent_protocol_version": "2",
+                    "frpc_version": "0.68.2",
+                    "frpc_status": "running",
+                    "hardware_release": {"product": "compute", "version": "1.0.0-rc.1"},
+                    "frp_client_release": {"product": "frp-client", "version": "0.4.0-rc.1"},
+                    "tenant_device_uuid": "tenant-device-uuid",
                 },
             },
             headers={**agent_headers, "X-Real-IP": "203.0.113.11"},
@@ -109,6 +142,24 @@ def test_admin_agent_forward_flow(tmp_path):
         assert listed_after_heartbeat.json()["items"][0]["hardware"]["gpu_model"] == "NVIDIA RTX 4060"
         assert listed_after_heartbeat.json()["items"][0]["hardware"]["disk_total_bytes"] == 1024209543168
         assert listed_after_heartbeat.json()["items"][0]["hardware"]["updated_at"]
+
+        fleet_after_heartbeat = client.get(
+            "/api/integrations/fleet/clients",
+            headers={"Authorization": "Bearer fleet-read-token-0123456789abcdef"},
+        ).json()["clients"][0]
+        assert fleet_after_heartbeat["hardware_release"] == "1.0.0-rc.1"
+        assert fleet_after_heartbeat["frpc_version"] == "0.68.2"
+
+        conflicting_identity = client.post(
+            "/api/agent/heartbeat",
+            json={
+                "hostname": "renamed-devbox",
+                "os": "Windows",
+                "inventory": {"device_id": "da-compute_terminal-different"},
+            },
+            headers=agent_headers,
+        )
+        assert conflicting_identity.status_code == 409
 
         check = client.post(
             "/api/port-checks",

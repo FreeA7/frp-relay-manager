@@ -22,4 +22,17 @@ sudo python3 /opt/frp-relay-agent/frp_relay_agent.py \
 sudo systemctl enable --now frp-relay-agent frp-relay-frpc
 ```
 
+Agent protocol v2 reads these non-secret observation files when present:
+
+```text
+/etc/deep-assess/device-identity.json
+/etc/deep-assess/release.json
+/etc/frp-relay-agent/release.json
+/var/lib/deep-assess/tenant-binding.json
+```
+
+Missing files are reported as unversioned or unlinked; the Agent never invents
+a version or stable device identity. Release stamps are written by the release
+workflow only after installation and verification succeed.
+
 Never commit `agent.env`, `agent-state.json`, or `frpc.generated.toml`.

@@ -9,15 +9,18 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-AGENT_VERSION = "0.3.0"
+AGENT_VERSION = "0.4.0-rc.1"
+AGENT_PROTOCOL_VERSION = "2"
 
 
 @dataclass
@@ -31,6 +34,11 @@ class AgentConfig:
     frpc_config_path: Path
     frpc_reload_cmd: Optional[str]
     hardware: Dict[str, Any]
+    device_identity_path: Path = Path("/etc/deep-assess/device-identity.json")
+    hardware_release_path: Path = Path("/etc/deep-assess/release.json")
+    client_release_path: Path = Path("/etc/frp-relay-agent/release.json")
+    tenant_binding_path: Path = Path("/var/lib/deep-assess/tenant-binding.json")
+    frpc_binary_path: Path = Path("/usr/local/bin/frpc")
 
 
 def load_config(path: Path) -> AgentConfig:
@@ -52,6 +60,19 @@ def load_config(path: Path) -> AgentConfig:
         frpc_config_path=resolve_config_path(path, get("FRP_RELAY_FRPC_CONFIG", "frpc.generated.toml")),
         frpc_reload_cmd=get("FRP_RELAY_FRPC_RELOAD_CMD", ""),
         hardware=hardware_from_config(get),
+        device_identity_path=Path(
+            get("FRP_RELAY_DEVICE_IDENTITY", "/etc/deep-assess/device-identity.json")
+        ),
+        hardware_release_path=Path(
+            get("FRP_RELAY_HARDWARE_RELEASE", "/etc/deep-assess/release.json")
+        ),
+        client_release_path=Path(
+            get("FRP_RELAY_CLIENT_RELEASE", "/etc/frp-relay-agent/release.json")
+        ),
+        tenant_binding_path=Path(
+            get("FRP_RELAY_TENANT_BINDING", "/var/lib/deep-assess/tenant-binding.json")
+        ),
+        frpc_binary_path=Path(get("FRP_RELAY_FRPC_BINARY", "/usr/local/bin/frpc")),
     )
 
 
@@ -266,9 +287,29 @@ def read_json(path: Path) -> Dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def read_optional_json(path: Path) -> Dict[str, Any]:
+    try:
+        payload = read_json(path)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    descriptor, temporary_name = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary_name, 0o600)
+        os.replace(temporary_name, path)
+        path.chmod(0o600)
+    finally:
+        if os.path.exists(temporary_name):
+            os.unlink(temporary_name)
 
 
 def request_json(method: str, url: str, payload: Optional[Dict[str, Any]] = None, token: Optional[str] = None) -> Dict[str, Any]:
@@ -289,6 +330,80 @@ def request_json(method: str, url: str, payload: Optional[Dict[str, Any]] = None
         raise RuntimeError("{} {} failed: {}".format(method, url, detail)) from exc
 
 
+def nested_string(payload: Dict[str, Any], keys: set[str]) -> str:
+    for key, value in payload.items():
+        if key in keys and isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, dict):
+            found = nested_string(value, keys)
+            if found:
+                return found
+    return ""
+
+
+def release_summary(path: Path) -> Dict[str, Any]:
+    payload = read_optional_json(path)
+    product = str(payload.get("product") or "").strip()
+    version = str(payload.get("version") or "").strip()
+    if not product or not version:
+        return {}
+    result = {"product": product, "version": version}
+    for key in ("gitTag", "gitCommit", "manifestChecksum", "profile", "installedAt"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            result[key] = value.strip()
+    return result
+
+
+def tenant_device_uuid(config: AgentConfig) -> str:
+    candidates = [
+        config.tenant_binding_path,
+        Path("/home/deploy/.config/deep-assess-mirror/tenant-device-self.json"),
+        Path("/home/deploy/.config/deep-assess-admin/tenant-device-binding.json"),
+        Path("/home/deploy/.config/deep-assess-admin/device-binding.json"),
+    ]
+    for path in candidates:
+        value = nested_string(read_optional_json(path), {"deviceUuid", "device_uuid"})
+        if value:
+            return value
+    return ""
+
+
+def frpc_status() -> str:
+    state = command_output(["systemctl", "is-active", "frp-relay-frpc.service"])
+    if state == "active":
+        return "running"
+    if state in {"inactive", "failed", "deactivating"}:
+        return "stopped"
+    return "unknown"
+
+
+def inventory_payload(config: AgentConfig) -> Dict[str, Any]:
+    identity = read_optional_json(config.device_identity_path)
+    hardware_release = release_summary(config.hardware_release_path)
+    client_release = release_summary(config.client_release_path)
+    inventory: Dict[str, Any] = {
+        "agent_protocol_version": AGENT_PROTOCOL_VERSION,
+        "frpc_version": command_output([str(config.frpc_binary_path), "--version"]),
+        "frpc_status": frpc_status(),
+        "observation_updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    device_id = nested_string(identity, {"deviceId", "device_id"})
+    device_type = nested_string(identity, {"deviceType", "device_type"})
+    current_tenant_device_uuid = tenant_device_uuid(config)
+    if device_id:
+        inventory["device_id"] = device_id
+    if device_type:
+        inventory["device_type"] = device_type
+    if current_tenant_device_uuid:
+        inventory["tenant_device_uuid"] = current_tenant_device_uuid
+    if hardware_release:
+        inventory["hardware_release"] = hardware_release
+    if client_release:
+        inventory["frp_client_release"] = client_release
+    return {key: value for key, value in inventory.items() if value is not None and value != ""}
+
+
 def machine_payload(config: AgentConfig) -> Dict[str, Any]:
     payload = {
         "hostname": socket.gethostname(),
@@ -296,6 +411,7 @@ def machine_payload(config: AgentConfig) -> Dict[str, Any]:
         "arch": platform.machine(),
         "ips": local_ips(),
         "agent_version": AGENT_VERSION,
+        "inventory": inventory_payload(config),
     }
     if config.hardware:
         payload["hardware"] = config.hardware
@@ -338,13 +454,7 @@ def register(config: AgentConfig) -> AgentConfig:
 
 def heartbeat(config: AgentConfig) -> None:
     payload = machine_payload(config)
-    payload["frpc_status"] = frpc_status()
     request_json("POST", config.server_url + "/api/agent/heartbeat", payload, token=config.agent_token)
-
-
-def frpc_status() -> str:
-    # v1 uses a conservative process-name check. Future versions can query frpc admin API.
-    return "unknown"
 
 
 def poll_tasks(config: AgentConfig) -> None:

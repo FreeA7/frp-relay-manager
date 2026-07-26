@@ -2,13 +2,15 @@
 
 FastAPI backend for the server-side relay manager.
 
-Planned responsibilities:
+Responsibilities:
 
 - admin authentication
 - client enrollment and heartbeat handling
 - port check requests and results
 - forwarding rule CRUD
 - frps config generation and reload coordination
+- latest device identity and release observation snapshots
+- scoped, read-only Fleet integration
 
 The production service should bind to `127.0.0.1:8010` behind nginx.
 
@@ -21,3 +23,7 @@ python -m venv .venv
 ```
 
 The app initializes SQLite and the admin account on startup.
+
+Set a separate `FRP_RELAY_FLEET_READ_TOKEN` of at least 32 characters before
+enabling the Fleet integration endpoint. Do not reuse the admin password,
+signing key, frps token, or agent token.

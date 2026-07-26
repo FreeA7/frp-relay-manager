@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 import ipaddress
 import re
@@ -30,6 +31,7 @@ FORWARD_STATUSES = {"active", "paused"}
 RESERVED_PORTS = {22, 80, 443, 7000, 7500, 8000, 8010}
 CLIENT_ONLINE_GRACE_SECONDS = 120
 DEFAULT_SSH_FORWARD_NOTE = "默认 SSH"
+SERVICE_VERSION = "0.2.0-rc.1"
 
 
 class LoginRequest(BaseModel):
@@ -62,6 +64,18 @@ class AgentHardware(BaseModel):
     os_version: Optional[str] = None
 
 
+class AgentInventory(BaseModel):
+    device_id: Optional[str] = Field(default=None, max_length=128)
+    device_type: Optional[str] = Field(default=None, max_length=64)
+    agent_protocol_version: Optional[str] = Field(default=None, max_length=80)
+    frpc_version: Optional[str] = Field(default=None, max_length=80)
+    frpc_status: Optional[str] = Field(default=None, max_length=32)
+    hardware_release: Optional[Dict[str, Any]] = None
+    frp_client_release: Optional[Dict[str, Any]] = None
+    tenant_device_uuid: Optional[str] = Field(default=None, max_length=128)
+    observation_updated_at: Optional[str] = Field(default=None, max_length=80)
+
+
 class AgentRegisterRequest(BaseModel):
     enrollment_token: str
     hostname: str
@@ -70,6 +84,7 @@ class AgentRegisterRequest(BaseModel):
     ips: List[str] = Field(default_factory=list)
     agent_version: Optional[str] = None
     hardware: Optional[AgentHardware] = None
+    inventory: Optional[AgentInventory] = None
 
 
 class AgentRegisterResponse(BaseModel):
@@ -85,6 +100,7 @@ class AgentHeartbeatRequest(BaseModel):
     ips: List[str] = Field(default_factory=list)
     agent_version: Optional[str] = None
     hardware: Optional[AgentHardware] = None
+    inventory: Optional[AgentInventory] = None
 
 
 class PortCheckCreate(BaseModel):
@@ -132,7 +148,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         )
         yield
 
-    app = FastAPI(title="FRP Relay API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="FRP Relay API", version=SERVICE_VERSION, lifespan=lifespan)
     app.state.settings = resolved_settings
     app.state.repo = Repository(resolved_settings.database_path)
 
@@ -146,7 +162,16 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
     @app.get("/health")
     def health() -> Dict[str, str]:
-        return {"status": "ok"}
+        return {"status": "ok", "version": SERVICE_VERSION}
+
+    @app.get("/api/integrations/fleet/clients")
+    def fleet_clients(
+        repo: Repository = Depends(get_repo),
+        fleet_reader: None = Depends(require_fleet_reader),
+    ) -> Dict[str, Any]:
+        del fleet_reader
+        rows = repo.fetchall("SELECT * FROM clients ORDER BY hostname, created_at")
+        return {"observed_at": utc_iso(), "clients": [format_fleet_client(row) for row in rows]}
 
     @app.post("/api/auth/login", response_model=TokenResponse)
     def login(payload: LoginRequest, repo: Repository = Depends(get_repo), settings_dep: Settings = Depends(get_settings)) -> TokenResponse:
@@ -254,6 +279,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 now,
             ),
         )
+        update_client_inventory(repo, client_id, payload.inventory, now)
         repo.execute("UPDATE enrollment_tokens SET used_at = ? WHERE id = ?", (now, enrollment["id"]))
         agent_token = create_signed_token(
             settings_dep.secret_key,
@@ -325,6 +351,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                     agent["sub"],
                 ),
             )
+        update_client_inventory(repo, agent["sub"], payload.inventory, now)
         return {"status": "ok"}
 
     @app.get("/api/agent/tasks")
@@ -543,6 +570,17 @@ def require_agent(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
 
+def require_fleet_reader(
+    authorization: Optional[str] = Header(default=None),
+    settings_dep: Settings = Depends(get_settings),
+) -> None:
+    if len(settings_dep.fleet_read_token) < 32:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Fleet integration is disabled")
+    supplied = bearer_token(authorization)
+    if not hmac.compare_digest(supplied, settings_dep.fleet_read_token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Fleet read token")
+
+
 def bearer_token(authorization: Optional[str]) -> str:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
@@ -635,6 +673,57 @@ def hardware_values(hardware: Optional[AgentHardware], updated_at: str) -> Dict[
     return {**values, "hardware_updated_at": updated_at if has_value else None}
 
 
+def release_version(value: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not isinstance(value, dict):
+        return None
+    return clean_optional_text(str(value.get("version") or ""))
+
+
+def update_client_inventory(
+    repo: Repository,
+    client_id: str,
+    inventory: Optional[AgentInventory],
+    updated_at: str,
+) -> None:
+    if inventory is None:
+        return
+    existing = repo.fetchone("SELECT device_id FROM clients WHERE client_id = ?", (client_id,))
+    next_device_id = clean_optional_text(inventory.device_id)
+    if existing and existing.get("device_id") and next_device_id not in {None, existing["device_id"]}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Stable deviceId cannot change")
+
+    payload = inventory.model_dump(mode="json", exclude_none=True)
+    repo.execute(
+        """
+        UPDATE clients
+        SET device_id = COALESCE(?, device_id),
+            device_type = ?,
+            agent_protocol_version = ?,
+            frpc_version = ?,
+            frpc_status = ?,
+            hardware_release = ?,
+            frp_client_release = ?,
+            tenant_device_uuid = ?,
+            inventory_json = ?,
+            observation_updated_at = ?
+        WHERE client_id = ?
+        """,
+        (
+            next_device_id,
+            clean_optional_text(inventory.device_type),
+            clean_optional_text(inventory.agent_protocol_version),
+            clean_optional_text(inventory.frpc_version),
+            clean_optional_text(inventory.frpc_status),
+            release_version(inventory.hardware_release),
+            release_version(inventory.frp_client_release),
+            clean_optional_text(inventory.tenant_device_uuid),
+            json.dumps(payload, ensure_ascii=True),
+            clean_optional_text(inventory.observation_updated_at) or updated_at,
+            client_id,
+        ),
+    )
+
+
 def clean_optional_text(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
@@ -720,6 +809,33 @@ def format_client(row: Dict[str, Any]) -> Dict[str, Any]:
         "last_remote_ip": row.get("last_remote_ip"),
         "last_remote_ip_seen_at": row.get("last_remote_ip_seen_at"),
         "created_at": row["created_at"],
+    }
+
+
+def format_fleet_client(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "client_id": row["client_id"],
+        "hostname": row["hostname"],
+        "status": current_client_status(row),
+        "last_seen_at": row["last_seen_at"],
+        "device_id": row.get("device_id"),
+        "device_type": row.get("device_type"),
+        "agent_version": row.get("agent_version"),
+        "agent_protocol_version": row.get("agent_protocol_version"),
+        "frpc_version": row.get("frpc_version"),
+        "frpc_status": row.get("frpc_status"),
+        "hardware_release": row.get("hardware_release"),
+        "frp_client_release": row.get("frp_client_release"),
+        "tenant_device_uuid": row.get("tenant_device_uuid"),
+        "observation_updated_at": row.get("observation_updated_at"),
+        "hardware": {
+            "cpu_model": row.get("cpu_model"),
+            "gpu_model": row.get("gpu_model"),
+            "memory_total_bytes": row.get("memory_total_bytes"),
+            "disk_total_bytes": row.get("disk_total_bytes"),
+            "os_version": row.get("os_version"),
+            "updated_at": row.get("hardware_updated_at"),
+        },
     }
 
 

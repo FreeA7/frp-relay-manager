@@ -109,6 +109,16 @@ class Repository:
                     "disk_total_bytes": "INTEGER",
                     "os_version": "TEXT",
                     "hardware_updated_at": "TEXT",
+                    "device_id": "TEXT",
+                    "device_type": "TEXT",
+                    "agent_protocol_version": "TEXT",
+                    "frpc_version": "TEXT",
+                    "frpc_status": "TEXT",
+                    "hardware_release": "TEXT",
+                    "frp_client_release": "TEXT",
+                    "tenant_device_uuid": "TEXT",
+                    "inventory_json": "TEXT",
+                    "observation_updated_at": "TEXT",
                 },
             )
 

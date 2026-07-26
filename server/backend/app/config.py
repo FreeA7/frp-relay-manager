@@ -59,6 +59,7 @@ class Settings:
     frps_token: str
     remote_port_min: int
     remote_port_max: int
+    fleet_read_token: str = ""
 
 
 def load_settings(env_file: Optional[Path] = None) -> Settings:
@@ -105,4 +106,5 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         frps_token=get("FRP_RELAY_FRPS_TOKEN", "change-me-frps-token"),
         remote_port_min=int(get("FRP_RELAY_REMOTE_PORT_MIN", "20000")),
         remote_port_max=int(get("FRP_RELAY_REMOTE_PORT_MAX", "49999")),
+        fleet_read_token=get("FRP_RELAY_FLEET_READ_TOKEN", ""),
     )

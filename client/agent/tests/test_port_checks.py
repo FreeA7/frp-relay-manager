@@ -1,5 +1,6 @@
 import subprocess
 import socket
+import stat
 import threading
 
 import pytest
@@ -9,9 +10,12 @@ from frp_relay_agent import check_tcp
 from frp_relay_agent import detect_hardware
 from frp_relay_agent import frpc_reload_pending_path
 from frp_relay_agent import hardware_from_config
+from frp_relay_agent import inventory_payload
 from frp_relay_agent import read_env_file
+from frp_relay_agent import release_summary
 from frp_relay_agent import render_frpc_config
 from frp_relay_agent import sync_frpc_config
+from frp_relay_agent import write_json
 
 
 def test_check_tcp_reads_banner():
@@ -126,6 +130,75 @@ def test_read_env_file_only_removes_paired_outer_quotes(tmp_path):
     assert values["FRP_RELAY_FRPC_RELOAD_CMD"] == "pkill -f '[f]rpc -c /opt/frp/frpc.generated.toml'"
     assert values["QUOTED_VALUE"] == "hello world"
     assert values["SINGLE_QUOTED_VALUE"] == "hello again"
+
+
+def test_inventory_payload_reads_identity_releases_and_tenant_binding(tmp_path, monkeypatch):
+    identity_path = tmp_path / "device-identity.json"
+    hardware_release_path = tmp_path / "hardware-release.json"
+    client_release_path = tmp_path / "frp-release.json"
+    tenant_binding_path = tmp_path / "tenant-binding.json"
+    identity_path.write_text(
+        '{"deviceId":"da-compute_terminal-stable","deviceType":"compute_terminal"}',
+        encoding="utf-8",
+    )
+    hardware_release_path.write_text(
+        '{"product":"compute","version":"1.2.3","gitTag":"compute-v1.2.3"}',
+        encoding="utf-8",
+    )
+    client_release_path.write_text(
+        '{"product":"frp-client","version":"0.4.0-rc.1"}',
+        encoding="utf-8",
+    )
+    tenant_binding_path.write_text('{"deviceUuid":"tenant-device-uuid"}', encoding="utf-8")
+    config = AgentConfig(
+        server_url="https://panel.tunnel.freea7.fun",
+        enrollment_token=None,
+        agent_token="agent-token",
+        client_id="client-id",
+        heartbeat_interval_seconds=30,
+        state_path=tmp_path / "agent-state.json",
+        frpc_config_path=tmp_path / "frpc.generated.toml",
+        frpc_reload_cmd=None,
+        hardware={},
+        device_identity_path=identity_path,
+        hardware_release_path=hardware_release_path,
+        client_release_path=client_release_path,
+        tenant_binding_path=tenant_binding_path,
+        frpc_binary_path=tmp_path / "frpc",
+    )
+
+    monkeypatch.setattr(
+        "frp_relay_agent.command_output",
+        lambda command: "0.68.1" if command[-1] == "--version" else "active",
+    )
+
+    inventory = inventory_payload(config)
+
+    assert inventory["device_id"] == "da-compute_terminal-stable"
+    assert inventory["device_type"] == "compute_terminal"
+    assert inventory["tenant_device_uuid"] == "tenant-device-uuid"
+    assert inventory["hardware_release"]["version"] == "1.2.3"
+    assert inventory["frp_client_release"]["version"] == "0.4.0-rc.1"
+    assert inventory["frpc_version"] == "0.68.1"
+    assert inventory["frpc_status"] == "running"
+
+
+def test_release_summary_rejects_incomplete_or_invalid_json(tmp_path):
+    invalid = tmp_path / "invalid.json"
+    incomplete = tmp_path / "incomplete.json"
+    invalid.write_text("not json", encoding="utf-8")
+    incomplete.write_text('{"product":"compute"}', encoding="utf-8")
+
+    assert release_summary(invalid) == {}
+    assert release_summary(incomplete) == {}
+
+
+def test_write_json_protects_agent_state(tmp_path):
+    state_path = tmp_path / "agent-state.json"
+
+    write_json(state_path, {"agent_token": "secret"})
+
+    assert stat.S_IMODE(state_path.stat().st_mode) == 0o600
 
 
 def test_sync_frpc_config_retries_failed_reload(tmp_path, monkeypatch):

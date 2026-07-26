@@ -12,6 +12,24 @@ only the deployment target.
 - `deploy/` - nginx, systemd, and frp deployment templates.
 - `scripts/` - local helper scripts, including scp deployment.
 
+## Fleet Boundary
+
+FRP Relay is authoritative for current client heartbeat state and forwarding
+rules. DEEP-Assess Fleet is authoritative for stable device identity, desired
+and observed releases, deployments, and verification history.
+
+Agent protocol v2 reports the stable `deviceId`, Tenant `deviceUuid`, Agent and
+`frpc` versions, service state, and local release stamps. The relay stores only
+the latest snapshot. Fleet reads that snapshot from the scoped endpoint:
+
+```text
+GET /api/integrations/fleet/clients
+Authorization: Bearer <FRP_RELAY_FLEET_READ_TOKEN>
+```
+
+This endpoint does not return agent tokens, enrollment tokens, local IPs, or
+forwarding configuration.
+
 ## Deployment Model
 
 Only `server/` and `deploy/` are copied to `kchat:/src/frp_relay`.
