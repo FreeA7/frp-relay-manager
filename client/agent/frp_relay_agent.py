@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-AGENT_VERSION = "0.4.0-rc.1"
+AGENT_VERSION = "0.4.0-rc.2"
 AGENT_PROTOCOL_VERSION = "2"
 
 
@@ -494,8 +494,14 @@ def frpc_reload_pending_path(config_path: Path) -> Path:
 def write_text_atomic(path: Path, content: str) -> None:
     temporary_path = path.with_name(".{}.{}.tmp".format(path.name, os.getpid()))
     try:
-        temporary_path.write_text(content, encoding="utf-8")
+        descriptor = os.open(temporary_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary_path.chmod(0o600)
         os.replace(temporary_path, path)
+        path.chmod(0o600)
     finally:
         temporary_path.unlink(missing_ok=True)
 

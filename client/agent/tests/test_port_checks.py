@@ -16,6 +16,7 @@ from frp_relay_agent import release_summary
 from frp_relay_agent import render_frpc_config
 from frp_relay_agent import sync_frpc_config
 from frp_relay_agent import write_json
+from frp_relay_agent import write_text_atomic
 
 
 def test_check_tcp_reads_banner():
@@ -199,6 +200,17 @@ def test_write_json_protects_agent_state(tmp_path):
     write_json(state_path, {"agent_token": "secret"})
 
     assert stat.S_IMODE(state_path.stat().st_mode) == 0o600
+
+
+def test_write_text_atomic_protects_frpc_credentials(tmp_path):
+    config_path = tmp_path / "frpc.generated.toml"
+    config_path.write_text('auth.token = "old-secret"\n', encoding="utf-8")
+    config_path.chmod(0o664)
+
+    write_text_atomic(config_path, 'auth.token = "new-secret"\n')
+
+    assert config_path.read_text(encoding="utf-8") == 'auth.token = "new-secret"\n'
+    assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
 
 
 def test_sync_frpc_config_retries_failed_reload(tmp_path, monkeypatch):
