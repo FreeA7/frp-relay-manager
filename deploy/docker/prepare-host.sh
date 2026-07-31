@@ -31,8 +31,11 @@ deployment_profile="$(read_env_value FRP_RELAY_DEPLOYMENT_PROFILE)"
 deployment_profile="${deployment_profile:-x-ui-cohost}"
 reserved_ports="$(read_env_value FRP_RELAY_RESERVED_PORTS)"
 case "$deployment_profile" in
-  dedicated) ;;
+  dedicated)
+    frps_config="frps.dedicated.toml"
+    ;;
   x-ui-cohost)
+    frps_config="frps.toml"
     case ",${reserved_ports}," in
       *,44999,*) ;;
       *)
@@ -51,7 +54,7 @@ install -d -o root -g root -m 0755 /opt/deep-assess/frp-relay
 install -d -o root -g root -m 0700 /etc/deep-assess/frp-relay
 install -d -o 10001 -g 10001 -m 0700 /var/lib/deep-assess/frp-relay
 install -d -o 10002 -g 10002 -m 0750 /var/log/deep-assess/frps
-install -o root -g root -m 0644 "$script_dir/frps.toml" /etc/deep-assess/frp-relay/frps.toml
+install -o root -g root -m 0644 "$script_dir/$frps_config" /etc/deep-assess/frp-relay/frps.toml
 
 docker compose --file "$script_dir/compose.yaml" config --quiet
 echo "FRP Relay Docker host preparation passed: $deployment_profile"

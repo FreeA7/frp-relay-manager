@@ -31,8 +31,11 @@ for port in 80 443 7000 7500 8010 8080; do
 done
 
 case "$deployment_profile" in
-  dedicated) ;;
+  dedicated)
+    expected_frps_config="frps.dedicated.toml"
+    ;;
   x-ui-cohost)
+    expected_frps_config="frps.toml"
     if ! docker inspect --format '{{.State.Running}}' x-ui 2>/dev/null | grep -qx true; then
       echo "unrelated x-ui container is not running" >&2
       exit 1
@@ -43,5 +46,10 @@ case "$deployment_profile" in
     exit 1
     ;;
 esac
+
+if ! cmp --silent "$script_dir/$expected_frps_config" /etc/deep-assess/frp-relay/frps.toml; then
+  echo "installed frps configuration does not match profile: $deployment_profile" >&2
+  exit 1
+fi
 
 echo "FRP Relay Docker verification passed: $deployment_profile"

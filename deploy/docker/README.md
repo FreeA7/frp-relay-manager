@@ -27,8 +27,9 @@ FRP_RELAY_DEPLOYMENT_PROFILE=dedicated
 ```
 
 The `dedicated` profile does not require an unrelated service or a reserved
-FRP forwarding port. Keep future VPN ports outside the FRP remote port pool and
-do not open them until the VPN release is deployed.
+FRP forwarding port. It installs `frps.dedicated.toml`, which allows the full
+TCP/UDP `20000-49999` pool. Keep future VPN ports outside that pool and do not
+open them until the VPN release is deployed.
 
 For a host that already runs x-ui/xray on TCP `18888` and `44999`, use:
 
@@ -39,7 +40,8 @@ FRP_RELAY_RESERVED_PORTS=44999
 
 The `x-ui-cohost` profile excludes `44999` from `frps`. Confirm the restored
 database does not already assign a forward to that port, and do not stop,
-reconfigure, or include x-ui in this Compose project.
+reconfigure, or include x-ui in this Compose project. It installs the
+coexistence template at `frps.toml`.
 
 The Agent API requires TCP `443`; FRPS requires TCP `7000` and TCP/UDP
 `20000-49999`. TCP `80` is only needed externally for HTTP redirect or an HTTP

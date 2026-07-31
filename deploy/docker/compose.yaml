@@ -2,7 +2,7 @@ name: deep-assess-frp-relay
 
 services:
   api:
-    image: deep-assess/frp-relay-api:0.2.0-rc.3
+    image: deep-assess/frp-relay-api:0.2.0-rc.4
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.api
@@ -58,7 +58,7 @@ services:
     restart: unless-stopped
 
   panel:
-    image: deep-assess/frp-relay-panel:0.2.0-rc.3
+    image: deep-assess/frp-relay-panel:0.2.0-rc.4
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.panel

@@ -1,0 +1,21 @@
+bindAddr = "0.0.0.0"
+bindPort = 7000
+
+auth.token = "{{ .Envs.FRP_RELAY_FRPS_TOKEN }}"
+
+webServer.addr = "127.0.0.1"
+webServer.port = 7500
+webServer.user = "admin"
+webServer.password = "{{ .Envs.FRP_RELAY_FRPS_DASHBOARD_PASSWORD }}"
+
+vhostHTTPPort = 8080
+subDomainHost = "tunnel.freea7.fun"
+
+# OpenVPN uses ports outside the FRP forwarding pool on a dedicated host.
+allowPorts = [
+  { start = 20000, end = 49999 }
+]
+
+log.to = "/var/log/frps/frps.log"
+log.level = "info"
+log.maxDays = 7
