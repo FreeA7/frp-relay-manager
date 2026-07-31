@@ -1,5 +1,9 @@
 # Install on kchat
 
+> Legacy systemd installation procedure. Do not run this on the production
+> `edge-gateway` host. Current operations use
+> `../docs/SERVER_DEPLOY_EDGE_GATEWAY.md` and `docker/README.md`.
+
 Run these steps on `kchat` after syncing `server/` and `deploy/`.
 
 ## Prepare secrets

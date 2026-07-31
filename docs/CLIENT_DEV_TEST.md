@@ -16,8 +16,8 @@ machine status, handle port checks, and update local frpc configuration.
 ## Local Development
 
 Use `client/agent` for the Python agent implementation. Keep templates and local
-test helpers in the client tree, but do not sync this directory to the kchat
-server with the server deployment script.
+test helpers in the client tree, but do not sync this directory to a server with
+the server deployment process.
 
 Create a local config from `client/agent/agent.env.example`:
 

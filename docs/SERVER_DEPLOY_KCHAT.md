@@ -1,7 +1,13 @@
-# kchat Server Deployment
+# Legacy kchat Server Deployment
 
-`kchat` is the deployment target for the server side of this project.
-Do not use it as the primary development workspace or Git repository.
+> Historical deployment record only. Production FRP Server operations use
+> `ssh edge-gateway` and `SERVER_DEPLOY_EDGE_GATEWAY.md`. Do not use this file
+> as a current connection or deployment procedure. The old host may still
+> answer SSH and health checks while it is retained for rollback.
+
+`kchat` was the deployment target for the original server-side systemd
+installation. Do not use it as the primary development workspace or Git
+repository.
 
 ## Target
 
@@ -50,7 +56,7 @@ It should not contain:
 - local Node dependency folders
 - local databases or generated secrets
 
-## Current Deployment Status
+## Historical Deployment Status
 
 As of 2026-05-15, the server has been deployed and verified:
 

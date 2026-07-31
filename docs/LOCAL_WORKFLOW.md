@@ -1,7 +1,9 @@
 # Local Workflow
 
 This workspace is the source of truth for development and version management.
-The `kchat` server is a deployment target only.
+The production deployment target is reached through the `edge-gateway` SSH
+alias. Server deployment still requires an immutable release; the remote host
+is never a development workspace or Git source of truth.
 
 ## Local Repository
 
@@ -18,33 +20,41 @@ The `kchat` server is a deployment target only.
 3. Add deployment templates under `deploy/`.
 4. Test server and client locally where possible.
 5. Commit local changes.
-6. Run the scp deployment script to copy server-side files to `kchat`.
-7. SSH to `kchat` and run install, restart, and verification commands.
+6. Publish or select the immutable `frp-server-v*` release and matching parent
+   Manifest through the release workflow.
+7. Complete the parent hardware-ops bootstrap and confirm `edge-gateway`
+   resolves to the fresh Relay dashboard `public_ip`.
+8. Deploy and verify the selected release through the approved FRP Server
+   infrastructure workflow.
 
-## Deployment Sync
+## Production Deployment
 
-Use the local PowerShell helper:
+Read `SERVER_DEPLOY_EDGE_GATEWAY.md` and `../deploy/docker/README.md`. The
+production application and Compose profile are under:
 
-```powershell
-.\scripts\deploy-server-scp.ps1
+```text
+/opt/deep-assess/frp-relay
+/opt/deep-assess/frp-relay/deploy/docker/compose.yaml
 ```
 
-The script copies only:
+Connect with `ssh edge-gateway` only after the live-state check. Do not copy a
+working tree directly to production.
 
-- `server/`
-- `deploy/`
+## Legacy kchat Sync
 
-to:
+`scripts/deploy-server-scp.ps1` copies `server/` and `deploy/` to
+`kchat:/src/frp_relay`. It is retained only for the legacy systemd deployment
+and must not be pointed at `edge-gateway` or used for a production update.
 
-- `kchat:/src/frp_relay`
-
-It intentionally leaves `client/`, `docs/`, `.git/`, local caches, and secrets
-on the local machine.
+The legacy sync intentionally leaves `client/`, `docs/`, `.git/`, local caches,
+and secrets on the local machine.
 
 ## Secret Handling
 
-- Keep real server secrets in `kchat:/src/frp_relay/.env` or another protected
-  server-side location.
+- Keep production server secrets in
+  `edge-gateway:/etc/deep-assess/frp-relay/server.env` with mode `0600`.
+- Treat `kchat:/src/frp_relay/.env` as legacy host state; never copy it into a
+  new deployment as a substitute for an approved secret migration.
 - Commit only `.env.example` files.
 - Never print DNSPod credentials, frps auth tokens, JWT secrets, or generated
   admin passwords in logs or documentation.

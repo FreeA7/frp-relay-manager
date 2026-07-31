@@ -2,9 +2,12 @@
 
 Server-side application code for the FRP relay system.
 
-This tree is copied to `kchat:/src/frp_relay/server` during deployment. It is
-expected to contain the backend API, frontend app, and server-side logic needed
-to manage clients, port checks, forwarding rules, and frps configuration.
+This tree is packaged by the versioned Docker Compose profile deployed through
+the production `edge-gateway` SSH alias. It contains the backend API, frontend
+app, and server-side logic needed to manage clients, port checks, forwarding
+rules, and frps configuration. Follow
+`../docs/SERVER_DEPLOY_EDGE_GATEWAY.md`; do not copy the working tree directly
+to a server.
 
 Runtime defaults from the handoff:
 

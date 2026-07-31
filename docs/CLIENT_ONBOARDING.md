@@ -7,10 +7,17 @@ Manager.
 
 - Admin panel: `https://panel.tunnel.freea7.fun`
 - Agent API base URL: `https://panel.tunnel.freea7.fun`
-- FRP server address: `45.141.136.217`
+- FRP server address: use the address in the agent-generated configuration and
+  confirm it against the current Relay dashboard; never copy an IP from this
+  document
 - FRP control port: `7000`
 - HTTP tunnel domain pattern: `https://<subdomain>.tunnel.freea7.fun`
-- TCP/UDP tunnel address pattern: `45.141.136.217:<remote_port>`
+- TCP/UDP tunnel address pattern: `tunnel.freea7.fun:<remote_port>` or the
+  current public address returned by the Relay API
+
+Server administrators connect through `ssh edge-gateway` after confirming the
+alias against fresh Relay state. The `kchat` alias is a legacy server and is not
+the production management target.
 
 The administrator must create an enrollment token in the panel and send it to
 the client operator. The token is one-time use; request a new token if
@@ -22,7 +29,7 @@ registration fails with `Invalid enrollment token`.
 - `frpc` version `0.68.1` for the client OS.
 - Outbound network access to:
   - `https://panel.tunnel.freea7.fun`
-  - `45.141.136.217:7000`
+  - `tunnel.freea7.fun:7000`
 
 ## Download frpc
 
@@ -182,9 +189,9 @@ Ask the administrator to:
 
 Examples:
 
-- SSH: `ssh user@45.141.136.217 -p <remote_port>`
+- SSH: `ssh user@tunnel.freea7.fun -p <remote_port>`
 - HTTP: `https://<subdomain>.tunnel.freea7.fun`
-- Database/TCP service: `45.141.136.217:<remote_port>`
+- Database/TCP service: `tunnel.freea7.fun:<remote_port>`
 
 ## Troubleshooting
 
@@ -192,7 +199,9 @@ Examples:
   administrator for a new token.
 - Agent cannot connect: verify outbound HTTPS access to
   `https://panel.tunnel.freea7.fun`.
-- frpc cannot connect: verify outbound TCP access to `45.141.136.217:7000`.
+- frpc cannot connect: compare its generated server address with the current
+  Relay dashboard, then verify outbound TCP access to
+  `tunnel.freea7.fun:7000`.
 - Public address opens but service is unavailable: verify the local service is
   listening on the configured `local_ip` and `local_port`.
 - HTTP tunnel returns an error: keep `frpc` running and confirm the forwarding

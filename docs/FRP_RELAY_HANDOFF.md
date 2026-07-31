@@ -1,5 +1,9 @@
 # FRP Relay Project Handoff
 
+> 历史交接记录，仅描述旧 `kchat` 节点。当前生产入口为 SSH 别名
+> `edge-gateway`，操作前阅读 `SERVER_DEPLOY_EDGE_GATEWAY.md` 并查询实时 Relay
+> 状态。不要从本文复制 IP、目录或部署命令作为当前配置。
+
 最后更新：2026-05-14 HKT
 
 ## 目标

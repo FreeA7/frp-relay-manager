@@ -7,10 +7,10 @@ workflow and adds read-only OpenVPN tunnel and client monitoring.
 ## Layout
 
 - `docs/` - project notes, handoff material, local workflow, deployment docs.
-- `server/` - server-side app code for the kchat deployment.
+- `server/` - server-side application code packaged by the Edge Gateway profile.
 - `client/` - client-side agent code and local connection tests.
 - `deploy/` - nginx, systemd, and frp deployment templates.
-- `scripts/` - local helper scripts, including scp deployment.
+- `scripts/` - local helper scripts, including the legacy kchat scp helper.
 
 ## Fleet Boundary
 
@@ -32,14 +32,15 @@ forwarding configuration.
 
 ## Deployment Model
 
-Only `server/` and `deploy/` are copied to `kchat:/src/frp_relay`.
+The production server uses the versioned Docker Compose profile under
+`deploy/docker/` and the SSH alias `edge-gateway`. Read
+`docs/SERVER_DEPLOY_EDGE_GATEWAY.md` before connecting. Resolve the alias
+against fresh Relay state instead of copying an IP address from documentation.
+
+Deploy only an immutable `frp-server-v*` release and its matching Manifest.
 Client code, local docs, Git metadata, secrets, caches, and build artifacts stay
-on the local machine.
+outside the production application directory.
 
-Use:
-
-```powershell
-.\scripts\deploy-server-scp.ps1
-```
-
-after committing and reviewing local changes.
+The `kchat` host, `scripts/deploy-server-scp.ps1`, and
+`deploy/INSTALL_KCHAT.md` belong to the legacy systemd deployment. They must
+not be used to update production.
