@@ -48,7 +48,7 @@ def _read_tunnel(
     }
     try:
         stat = path.stat()
-        rows = list(csv.reader(path.read_text(encoding="utf-8", errors="replace").splitlines()))
+        rows = _parse_status_rows(path.read_text(encoding="utf-8", errors="replace"))
     except FileNotFoundError:
         base["error"] = "status file is missing"
         return base
@@ -81,6 +81,14 @@ def _read_tunnel(
         }
     )
     return base
+
+
+def _parse_status_rows(content: str) -> List[List[str]]:
+    rows: List[List[str]] = []
+    for line in content.splitlines():
+        delimiter = "\t" if "\t" in line else ","
+        rows.extend(csv.reader([line], delimiter=delimiter))
+    return rows
 
 
 def _format_client(headers: List[str], values: List[str], observed_at: datetime) -> Dict[str, Any]:

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -19,8 +20,13 @@ END
 """
 
 
-def test_reads_status_v3(monkeypatch, tmp_path: Path):
-    (tmp_path / "core.status").write_text(STATUS, encoding="utf-8")
+@pytest.mark.parametrize(
+    "status_text",
+    [STATUS, STATUS.replace(",", "\t")],
+    ids=["comma-separated", "tab-separated"],
+)
+def test_reads_status_v3(monkeypatch, tmp_path: Path, status_text: str):
+    (tmp_path / "core.status").write_text(status_text, encoding="utf-8")
     observed_at = datetime.fromtimestamp(1785460810, tz=timezone.utc)
     monkeypatch.setattr("app.openvpn_status.datetime", FrozenDateTime(observed_at))
 

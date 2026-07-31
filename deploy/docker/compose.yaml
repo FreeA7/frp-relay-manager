@@ -2,7 +2,7 @@ name: deep-assess-edge-gateway
 
 services:
   api:
-    image: deep-assess/edge-gateway-api:0.3.0-rc.1
+    image: deep-assess/edge-gateway-api:0.3.0-rc.2
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.api
