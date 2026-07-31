@@ -11,8 +11,11 @@ Responsibilities:
 - frps config generation and reload coordination
 - latest device identity and release observation snapshots
 - scoped, read-only Fleet integration
+- authenticated, read-only OpenVPN status monitoring
 
 The production service should bind to `127.0.0.1:8010` behind nginx.
+OpenVPN status-version-3 files are read from `/run/deepassess-openvpn` through
+a read-only container mount. The API never reads or returns VPN key material.
 
 ## Local Run
 

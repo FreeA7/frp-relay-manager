@@ -1,8 +1,8 @@
-# frp-relay-manager
+# DeepAssess Edge Gateway
 
-This repository is the local development workspace for the FRP relay manager.
-Development, documentation, and Git history live here. The `kchat` server is
-only the deployment target.
+This repository contains the DeepAssess public edge console and FRP relay.
+The authenticated console keeps the existing FRP device and forwarding
+workflow and adds read-only OpenVPN tunnel and client monitoring.
 
 ## Layout
 
@@ -14,7 +14,7 @@ only the deployment target.
 
 ## Fleet Boundary
 
-FRP Relay is authoritative for current client heartbeat state and forwarding
+The FRP subsystem is authoritative for current client heartbeat state and forwarding
 rules. DEEP-Assess Fleet is authoritative for stable device identity, desired
 and observed releases, deployments, and verification history.
 

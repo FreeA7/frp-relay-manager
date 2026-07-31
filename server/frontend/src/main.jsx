@@ -7,6 +7,7 @@ import {
   Globe2,
   LogOut,
   Monitor,
+  Network,
   Play,
   Plus,
   RadioTower,
@@ -81,9 +82,9 @@ function Login({ onLogin }) {
     <main className="loginShell">
       <form className="loginPanel" onSubmit={submit}>
         <div className="brandRow">
-          <RadioTower size={28} />
+          <Network size={28} />
           <div>
-            <h1>FRP 远程接入</h1>
+            <h1>DeepAssess Edge Gateway</h1>
             <p>{ADMIN_EMAIL}</p>
           </div>
         </div>
@@ -111,6 +112,8 @@ function Panel({ onLogout }) {
   const [clients, setClients] = useState([]);
   const [forwards, setForwards] = useState([]);
   const [dashboard, setDashboard] = useState(null);
+  const [openvpn, setOpenvpn] = useState(null);
+  const [activeView, setActiveView] = useState('frp');
   const [selectedClient, setSelectedClient] = useState('');
   const [machinePage, setMachinePage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
@@ -121,15 +124,17 @@ function Panel({ onLogout }) {
   async function load() {
     setError('');
     try {
-      const [clientData, forwardData, dashboardData] = await Promise.all([
+      const [clientData, forwardData, dashboardData, openvpnData] = await Promise.all([
         api('/api/clients'),
         api('/api/forwards'),
         api('/api/dashboard'),
+        api('/api/openvpn/status'),
       ]);
       const nextClients = clientData.items || [];
       setClients(nextClients);
       setForwards(forwardData.items || []);
       setDashboard(dashboardData);
+      setOpenvpn(openvpnData);
       setSelectedClient((current) => {
         if (current && nextClients.some((client) => client.client_id === current)) {
           return current;
@@ -303,17 +308,19 @@ function Panel({ onLogout }) {
     <main className="appShell">
       <header className="topBar">
         <div className="brandRow">
-          <RadioTower size={26} />
+          <Network size={26} />
           <div>
-            <h1>FRP 远程接入</h1>
+            <h1>DeepAssess Edge Gateway</h1>
             <p>{dashboard?.panel_domain || 'panel.tunnel.freea7.fun'}</p>
           </div>
         </div>
         <div className="topActions">
-          <button className="secondaryButton" onClick={createEnrollment}>
-            <ClipboardCopy size={16} />
-            生成接入令牌
-          </button>
+          {activeView === 'frp' && (
+            <button className="secondaryButton" onClick={createEnrollment}>
+              <ClipboardCopy size={16} />
+              生成接入令牌
+            </button>
+          )}
           <button className="iconButton" title="刷新" onClick={load}>
             <RefreshCcw size={18} />
           </button>
@@ -327,6 +334,19 @@ function Panel({ onLogout }) {
         <section className={error ? 'errorBox' : 'messageBox'}>{error || message}</section>
       )}
 
+      <nav className="viewTabs" aria-label="网关监控视图">
+        <button className={activeView === 'frp' ? 'active' : ''} onClick={() => setActiveView('frp')}>
+          <RadioTower size={17} />
+          FRP 接入
+        </button>
+        <button className={activeView === 'openvpn' ? 'active' : ''} onClick={() => setActiveView('openvpn')}>
+          <ShieldCheck size={17} />
+          OpenVPN 隧道
+        </button>
+      </nav>
+
+      {activeView === 'frp' ? (
+        <>
       <section className="metricsGrid">
         <Metric icon={<Monitor />} label="全部机器" value={dashboard?.client_count ?? clients.length} />
         <Metric icon={<Activity />} label="在线机器" value={dashboard?.online_client_count ?? onlineCount} tone="ok" />
@@ -518,7 +538,76 @@ function Panel({ onLogout }) {
           </section>
         </div>
       )}
+        </>
+      ) : (
+        <OpenVpnPanel data={openvpn} />
+      )}
     </main>
+  );
+}
+
+function OpenVpnPanel({ data }) {
+  const tunnels = data?.tunnels || [];
+  return (
+    <>
+      <section className="metricsGrid vpnMetrics">
+        <Metric icon={<ShieldCheck />} label="全部隧道" value={data?.tunnel_count ?? 2} />
+        <Metric icon={<Activity />} label="在线隧道" value={data?.online_tunnel_count ?? 0} tone="ok" />
+        <Metric icon={<Monitor />} label="已连接客户端" value={data?.connected_client_count ?? 0} />
+        <Metric icon={<RefreshCcw />} label="状态更新时间" value={formatTimeOnly(data?.observed_at)} />
+      </section>
+      <section className="vpnTunnelList">
+        {tunnels.map((tunnel) => (
+          <article className="vpnTunnel" key={tunnel.id}>
+            <header className="vpnTunnelHeader">
+              <div>
+                <div className="tunnelTitleLine">
+                  <h2>{tunnel.label}</h2>
+                  <span className={`statusBadge ${tunnel.status === 'online' ? 'online' : 'offline'}`}>
+                    {vpnStatusLabel(tunnel.status)}
+                  </span>
+                </div>
+                <p>{tunnel.network} · 最近更新 {formatDateTime(tunnel.last_update)}</p>
+              </div>
+              <strong>{tunnel.connected_client_count} 个客户端</strong>
+            </header>
+            {tunnel.error && <div className="errorBox inline">{tunnel.error}</div>}
+            {tunnel.clients.length ? (
+              <div className="vpnTableWrap">
+                <table className="vpnTable">
+                  <thead>
+                    <tr>
+                      <th>客户端</th>
+                      <th>虚拟地址</th>
+                      <th>远端地址</th>
+                      <th>接收</th>
+                      <th>发送</th>
+                      <th>在线时长</th>
+                      <th>加密</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tunnel.clients.map((client) => (
+                      <tr key={`${tunnel.id}-${client.common_name}-${client.virtual_address}`}>
+                        <td><strong>{client.common_name}</strong></td>
+                        <td>{client.virtual_address || '--'}</td>
+                        <td>{client.remote_address || '--'}</td>
+                        <td>{formatBytes(client.bytes_received)}</td>
+                        <td>{formatBytes(client.bytes_sent)}</td>
+                        <td>{formatDuration(client.uptime_seconds)}</td>
+                        <td>{client.cipher || '--'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="emptyState slim">当前没有已连接客户端</div>
+            )}
+          </article>
+        ))}
+      </section>
+    </>
   );
 }
 
@@ -596,6 +685,12 @@ function forwardStatusLabel(status) {
   return status || '未知';
 }
 
+function vpnStatusLabel(status) {
+  if (status === 'online') return '在线';
+  if (status === 'stale') return '状态过期';
+  return '不可用';
+}
+
 function deviceLabel(client) {
   return client?.hostname || client?.name || '--';
 }
@@ -626,6 +721,28 @@ function formatDateTime(value) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
+}
+
+function formatTimeOnly(value) {
+  if (!value) return '--';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+  return new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(date);
+}
+
+function formatDuration(value) {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0) return '--';
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days) return `${days} 天 ${hours} 小时`;
+  if (hours) return `${hours} 小时 ${minutes} 分`;
+  return `${minutes} 分`;
 }
 
 createRoot(document.getElementById('root')).render(<App />);

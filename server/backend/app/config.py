@@ -81,6 +81,8 @@ class Settings:
     remote_port_max: int
     fleet_read_token: str = ""
     reserved_ports: frozenset[int] = frozenset()
+    openvpn_status_dir: Path = Path("/run/deepassess-openvpn")
+    openvpn_status_stale_seconds: int = 30
 
 
 def load_settings(env_file: Optional[Path] = None) -> Settings:
@@ -130,4 +132,6 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         remote_port_max=int(get("FRP_RELAY_REMOTE_PORT_MAX", "49999")),
         fleet_read_token=get("FRP_RELAY_FLEET_READ_TOKEN", ""),
         reserved_ports=_port_set(get("FRP_RELAY_RESERVED_PORTS", "")),
+        openvpn_status_dir=Path(get("EDGE_GATEWAY_OPENVPN_STATUS_DIR", "/run/deepassess-openvpn")).resolve(),
+        openvpn_status_stale_seconds=int(get("EDGE_GATEWAY_OPENVPN_STATUS_STALE_SECONDS", "30")),
     )

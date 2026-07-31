@@ -1,9 +1,10 @@
 # Docker Deployment
 
-This profile runs the Relay API, `frps`, and nginx panel as one Docker Compose
-project with host networking. Host networking is required because FRP binds
-dynamic TCP and UDP forwarding ports. The project must not own or restart
-unrelated containers and host services.
+This profile runs the Edge Gateway API, `frps`, and nginx web console as one
+Docker Compose project with host networking. Host networking is required
+because FRP binds dynamic TCP and UDP forwarding ports. The web container also
+terminates TLS for the DeepAssess application domains and proxies them through
+the separately managed OpenVPN tunnels.
 
 ## Host Paths
 
@@ -12,7 +13,9 @@ unrelated containers and host services.
 - Generated frps configuration: `/etc/deep-assess/frp-relay/frps.toml` (`0644`)
 - SQLite data: `/var/lib/deep-assess/frp-relay` (`0700`, UID/GID `10001`)
 - frps logs: `/var/log/deep-assess/frps` (`0750`, UID/GID `10002`)
-- TLS material: `/etc/letsencrypt` (read-only in the panel container)
+- OpenVPN status files: `/run/deepassess-openvpn` (read-only in the API container, group GID `10003`)
+- TLS material: `/etc/letsencrypt` (read-only in the web container)
+- ACME webroot: `/var/www/certbot` (read-only in the web container)
 
 Do not copy a live SQLite file. Use SQLite's backup API, verify the backup, and
 transfer it with mode `0600`. Preserve the signing secret, frps token, Fleet
@@ -43,9 +46,9 @@ database does not already assign a forward to that port, and do not stop,
 reconfigure, or include x-ui in this Compose project. It installs the
 coexistence template at `frps.toml`.
 
-The Agent API requires TCP `443`; FRPS requires TCP `7000` and TCP/UDP
-`20000-49999`. TCP `80` is only needed externally for HTTP redirect or an HTTP
-certificate challenge and may remain blocked when neither is used. For
+The web console and business ingress require TCP `443`; FRPS requires TCP
+`7000` and TCP/UDP `20000-49999`; OpenVPN uses UDP `51820` and `51821` outside
+the FRP pool. TCP `80` serves redirects and HTTP certificate challenges. For
 `x-ui-cohost`, keep the host-level `44999` rule for x-ui; FRP does not bind it.
 Cloud security-group rules must match the host firewall before cutover.
 

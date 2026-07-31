@@ -1,8 +1,8 @@
-name: deep-assess-frp-relay
+name: deep-assess-edge-gateway
 
 services:
   api:
-    image: deep-assess/frp-relay-api:0.2.0-rc.4
+    image: deep-assess/edge-gateway-api:0.3.0-rc.1
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.api
@@ -14,6 +14,9 @@ services:
       FRP_RELAY_DATABASE: /var/lib/frp-relay/frp_relay.db
     volumes:
       - /var/lib/deep-assess/frp-relay:/var/lib/frp-relay
+      - /run/deepassess-openvpn:/run/deepassess-openvpn:ro
+    group_add:
+      - "10003"
     user: "10001:10001"
     read_only: true
     tmpfs:
@@ -57,14 +60,15 @@ services:
         max-file: "3"
     restart: unless-stopped
 
-  panel:
-    image: deep-assess/frp-relay-panel:0.2.0-rc.4
+  web:
+    image: deep-assess/edge-gateway-web:0.3.0-rc.1
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.panel
     network_mode: host
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
     read_only: true
     tmpfs:
       - /var/cache/nginx:size=32m

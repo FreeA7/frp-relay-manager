@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from .config import Settings, load_settings
 from .repository import Repository
+from .openvpn_status import read_openvpn_status
 from .security import (
     create_signed_token,
     generate_secret_urlsafe,
@@ -31,7 +32,7 @@ FORWARD_STATUSES = {"active", "paused"}
 RESERVED_PORTS = {22, 80, 443, 7000, 7500, 8000, 8010}
 CLIENT_ONLINE_GRACE_SECONDS = 120
 DEFAULT_SSH_FORWARD_NOTE = "默认 SSH"
-SERVICE_VERSION = "0.2.0-rc.4"
+SERVICE_VERSION = "0.3.0-rc.1"
 
 
 class LoginRequest(BaseModel):
@@ -148,7 +149,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         )
         yield
 
-    app = FastAPI(title="FRP Relay API", version=SERVICE_VERSION, lifespan=lifespan)
+    app = FastAPI(title="DeepAssess Edge Gateway API", version=SERVICE_VERSION, lifespan=lifespan)
     app.state.settings = resolved_settings
     app.state.repo = Repository(resolved_settings.database_path)
 
@@ -211,6 +212,17 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             "base_domain": settings_dep.base_domain,
             "panel_domain": settings_dep.panel_domain,
         }
+
+    @app.get("/api/openvpn/status")
+    def openvpn_status(
+        settings_dep: Settings = Depends(get_settings),
+        admin: Dict[str, Any] = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        del admin
+        return read_openvpn_status(
+            settings_dep.openvpn_status_dir,
+            settings_dep.openvpn_status_stale_seconds,
+        )
 
     @app.post("/api/enrollment-tokens", response_model=EnrollmentTokenResponse)
     def create_enrollment_token(

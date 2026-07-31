@@ -222,6 +222,101 @@ button:disabled {
   margin-bottom: 18px;
 }
 
+.viewTabs {
+  display: inline-flex;
+  gap: 4px;
+  border: 1px solid #d3dbe5;
+  border-radius: 7px;
+  padding: 4px;
+  margin-bottom: 18px;
+  background: #ffffff;
+}
+
+.viewTabs button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  color: #566478;
+  background: transparent;
+  font-weight: 750;
+}
+
+.viewTabs button.active {
+  color: #ffffff;
+  background: #196b5c;
+}
+
+.vpnTunnelList {
+  display: grid;
+  gap: 14px;
+}
+
+.vpnTunnel {
+  border: 1px solid #dde3ea;
+  border-radius: 8px;
+  padding: 18px;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(23, 32, 42, 0.08);
+}
+
+.vpnTunnelHeader,
+.tunnelTitleLine {
+  display: flex;
+  align-items: center;
+}
+
+.vpnTunnelHeader {
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.vpnTunnelHeader p {
+  margin-top: 5px;
+  font-size: 13px;
+}
+
+.vpnTunnelHeader > strong {
+  white-space: nowrap;
+}
+
+.tunnelTitleLine {
+  gap: 10px;
+}
+
+.errorBox.inline {
+  margin-bottom: 12px;
+}
+
+.vpnTableWrap {
+  overflow-x: auto;
+}
+
+.vpnTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.vpnTable th,
+.vpnTable td {
+  border-top: 1px solid #e5ebf1;
+  padding: 12px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.vpnTable th {
+  color: #687588;
+  font-size: 12px;
+  font-weight: 750;
+  background: #f8fafc;
+}
+
 .metric {
   display: grid;
   grid-template-columns: 24px 1fr;
@@ -709,5 +804,19 @@ button:disabled {
 
   .machineCard {
     min-height: 108px;
+  }
+
+  .viewTabs {
+    width: 100%;
+  }
+
+  .viewTabs button {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .vpnTunnelHeader {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

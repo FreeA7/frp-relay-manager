@@ -54,7 +54,16 @@ install -d -o root -g root -m 0755 /opt/deep-assess/frp-relay
 install -d -o root -g root -m 0700 /etc/deep-assess/frp-relay
 install -d -o 10001 -g 10001 -m 0700 /var/lib/deep-assess/frp-relay
 install -d -o 10002 -g 10002 -m 0750 /var/log/deep-assess/frps
+if ! getent group 10003 >/dev/null; then
+  groupadd --system --gid 10003 deepassess-vpn-status
+fi
+if [ "$(getent group 10003 | cut -d: -f1)" != "deepassess-vpn-status" ]; then
+  echo "GID 10003 is already used by another group" >&2
+  exit 1
+fi
+install -d -o root -g 10003 -m 0770 /run/deepassess-openvpn
+install -d -o root -g root -m 0755 /var/www/certbot
 install -o root -g root -m 0644 "$script_dir/$frps_config" /etc/deep-assess/frp-relay/frps.toml
 
 docker compose --file "$script_dir/compose.yaml" config --quiet
-echo "FRP Relay Docker host preparation passed: $deployment_profile"
+echo "Edge Gateway Docker host preparation passed: $deployment_profile"

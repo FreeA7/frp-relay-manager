@@ -52,4 +52,11 @@ if ! cmp --silent "$script_dir/$expected_frps_config" /etc/deep-assess/frp-relay
   exit 1
 fi
 
-echo "FRP Relay Docker verification passed: $deployment_profile"
+for status_file in /run/deepassess-openvpn/core.status /run/deepassess-openvpn/engine.status; do
+  if [ ! -r "$status_file" ]; then
+    echo "OpenVPN status file is missing or unreadable: $status_file" >&2
+    exit 1
+  fi
+done
+
+echo "Edge Gateway Docker verification passed: $deployment_profile"
