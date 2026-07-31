@@ -1,10 +1,14 @@
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.main import create_app
+from app.main import allocate_remote_port, create_app, validate_remote_port
+from app.repository import Repository
 from app.security import utc_now
 
 
@@ -194,6 +198,22 @@ def test_admin_agent_forward_flow(tmp_path):
         tasks_after_forward = client.get("/api/agent/tasks", headers=agent_headers)
         assert tasks_after_forward.status_code == 200
         assert tasks_after_forward.json()["forwards"][0]["remote_port"] == remote_port
+
+
+def test_reserved_remote_ports_are_not_allocated(tmp_path):
+    settings = replace(
+        make_settings(tmp_path),
+        remote_port_min=20000,
+        remote_port_max=20002,
+        reserved_ports=frozenset({20000, 20001}),
+    )
+    repo = Repository(settings.database_path)
+    repo.init_db()
+
+    assert allocate_remote_port(repo, settings) == 20002
+    with pytest.raises(HTTPException) as exc_info:
+        validate_remote_port(repo, settings, 20001)
+    assert exc_info.value.status_code == 400
 
 
 def test_stale_heartbeat_is_reported_offline(tmp_path):

@@ -1,0 +1,29 @@
+FROM alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+
+ARG FRP_VERSION=0.68.1
+ARG TARGETARCH
+ARG FRP_SHA256_AMD64=4a4e88987d39561e1b3b3b23d0ede48a457eebf76a87231999957e870f5f02b6
+ARG FRP_SHA256_ARM64=e7ad15b0cfe4cf0125df4217778b66cb4426179270967b59900ecb2362d8cd01
+
+RUN apk add --no-cache ca-certificates curl tar \
+    && case "${TARGETARCH}" in \
+        amd64) checksum="${FRP_SHA256_AMD64}" ;; \
+        arm64) checksum="${FRP_SHA256_ARM64}" ;; \
+        *) printf 'unsupported architecture: %s\n' "${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && archive="frp_${FRP_VERSION}_linux_${TARGETARCH}.tar.gz" \
+    && curl --fail --location --silent --show-error \
+        --output "/tmp/${archive}" \
+        "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${archive}" \
+    && printf '%s  %s\n' "${checksum}" "/tmp/${archive}" | sha256sum -c - \
+    && tar -xzf "/tmp/${archive}" -C /tmp \
+    && install -m 0755 "/tmp/frp_${FRP_VERSION}_linux_${TARGETARCH}/frps" /usr/local/bin/frps \
+    && addgroup -S -g 10002 frp \
+    && adduser -S -D -H -u 10002 -G frp frp \
+    && install -d -o frp -g frp -m 0750 /var/log/frps \
+    && apk del curl tar \
+    && rm -rf /tmp/*
+
+USER 10002:10002
+ENTRYPOINT ["/usr/local/bin/frps"]
+CMD ["-c", "/etc/frp-relay/frps.toml"]

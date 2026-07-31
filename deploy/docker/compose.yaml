@@ -1,0 +1,94 @@
+name: deep-assess-frp-relay
+
+services:
+  api:
+    image: deep-assess/frp-relay-api:0.2.0-rc.2
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.api
+    network_mode: host
+    env_file:
+      - /etc/deep-assess/frp-relay/server.env
+    environment:
+      FRP_RELAY_DATA_DIR: /var/lib/frp-relay
+      FRP_RELAY_DATABASE: /var/lib/frp-relay/frp_relay.db
+    volumes:
+      - /var/lib/deep-assess/frp-relay:/var/lib/frp-relay
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+    restart: unless-stopped
+
+  frps:
+    image: deep-assess/frps:0.68.1-r1
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.frps
+    network_mode: host
+    env_file:
+      - /etc/deep-assess/frp-relay/server.env
+    volumes:
+      - /etc/deep-assess/frp-relay/frps.toml:/etc/frp-relay/frps.toml:ro
+      - /var/log/deep-assess/frps:/var/log/frps
+    user: "10002:10002"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 512m
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+    restart: unless-stopped
+
+  panel:
+    image: deep-assess/frp-relay-panel:0.2.0-rc.2
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.panel
+    network_mode: host
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:size=32m
+      - /var/run:size=1m
+      - /tmp:size=16m
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - CHOWN
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      api:
+        condition: service_healthy
+      frps:
+        condition: service_started
+    pids_limit: 128
+    mem_limit: 128m
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+    restart: unless-stopped

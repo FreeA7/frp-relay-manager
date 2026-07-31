@@ -31,7 +31,7 @@ FORWARD_STATUSES = {"active", "paused"}
 RESERVED_PORTS = {22, 80, 443, 7000, 7500, 8000, 8010}
 CLIENT_ONLINE_GRACE_SECONDS = 120
 DEFAULT_SSH_FORWARD_NOTE = "默认 SSH"
-SERVICE_VERSION = "0.2.0-rc.1"
+SERVICE_VERSION = "0.2.0-rc.2"
 
 
 class LoginRequest(BaseModel):
@@ -600,7 +600,7 @@ def allocate_remote_port(repo: Repository, settings: Settings) -> int:
     candidates = [
         port
         for port in range(settings.remote_port_min, settings.remote_port_max + 1)
-        if port not in used and port not in RESERVED_PORTS
+        if port not in used and port not in RESERVED_PORTS and port not in settings.reserved_ports
     ]
     if candidates:
         return candidates[secrets.randbelow(len(candidates))]
@@ -616,7 +616,12 @@ def normalized_forward_note(protocol: str, local_port: int, note: Optional[str])
 def validate_remote_port(repo: Repository, settings: Settings, remote_port: Optional[int]) -> None:
     if remote_port is None:
         return
-    if remote_port < settings.remote_port_min or remote_port > settings.remote_port_max or remote_port in RESERVED_PORTS:
+    if (
+        remote_port < settings.remote_port_min
+        or remote_port > settings.remote_port_max
+        or remote_port in RESERVED_PORTS
+        or remote_port in settings.reserved_ports
+    ):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Remote port is outside the allowed pool")
     existing = repo.fetchone("SELECT id FROM forwards WHERE remote_port = ?", (remote_port,))
     if existing:

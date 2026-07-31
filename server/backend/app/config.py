@@ -36,6 +36,26 @@ def _bool(value: str, default: bool = False) -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
+def _port_set(value: str) -> frozenset[int]:
+    ports: set[int] = set()
+    for raw_item in value.split(","):
+        item = raw_item.strip()
+        if not item:
+            continue
+        try:
+            if "-" in item:
+                raw_start, raw_end = item.split("-", 1)
+                start, end = int(raw_start), int(raw_end)
+            else:
+                start = end = int(item)
+        except ValueError as exc:
+            raise ValueError(f"invalid reserved port: {item}") from exc
+        if start < 1 or end > 65535 or start > end:
+            raise ValueError(f"invalid reserved port range: {item}")
+        ports.update(range(start, end + 1))
+    return frozenset(ports)
+
+
 @dataclass(frozen=True)
 class Settings:
     project_root: Path
@@ -60,11 +80,13 @@ class Settings:
     remote_port_min: int
     remote_port_max: int
     fleet_read_token: str = ""
+    reserved_ports: frozenset[int] = frozenset()
 
 
 def load_settings(env_file: Optional[Path] = None) -> Settings:
-    package_root = Path(__file__).resolve().parents[1]
-    project_root = Path(__file__).resolve().parents[3]
+    config_path = Path(__file__).resolve()
+    package_root = config_path.parents[1]
+    project_root = config_path.parents[3] if len(config_path.parents) > 3 else package_root
 
     explicit_env = Path(os.environ["FRP_RELAY_ENV_FILE"]) if os.environ.get("FRP_RELAY_ENV_FILE") else None
     selected_env = env_file or explicit_env or _first_existing(
@@ -107,4 +129,5 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         remote_port_min=int(get("FRP_RELAY_REMOTE_PORT_MIN", "20000")),
         remote_port_max=int(get("FRP_RELAY_REMOTE_PORT_MAX", "49999")),
         fleet_read_token=get("FRP_RELAY_FLEET_READ_TOKEN", ""),
+        reserved_ports=_port_set(get("FRP_RELAY_RESERVED_PORTS", "")),
     )
