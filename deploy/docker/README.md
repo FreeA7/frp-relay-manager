@@ -18,20 +18,33 @@ Do not copy a live SQLite file. Use SQLite's backup API, verify the backup, and
 transfer it with mode `0600`. Preserve the signing secret, frps token, Fleet
 read token, client records, forwarding rules, and administrator password hash.
 
-## Coexistence
+## Deployment Profiles
 
-The migration host already owns TCP `18888` and `44999` for x-ui/xray. This
-profile excludes `44999` from `frps` and requires:
+Set one explicit host profile in the protected environment:
 
 ```env
+FRP_RELAY_DEPLOYMENT_PROFILE=dedicated
+```
+
+The `dedicated` profile does not require an unrelated service or a reserved
+FRP forwarding port. Keep future VPN ports outside the FRP remote port pool and
+do not open them until the VPN release is deployed.
+
+For a host that already runs x-ui/xray on TCP `18888` and `44999`, use:
+
+```env
+FRP_RELAY_DEPLOYMENT_PROFILE=x-ui-cohost
 FRP_RELAY_RESERVED_PORTS=44999
 ```
 
-Confirm the restored database does not already assign a forward to `44999`.
-Do not stop, reconfigure, or include x-ui in this Compose project.
+The `x-ui-cohost` profile excludes `44999` from `frps`. Confirm the restored
+database does not already assign a forward to that port, and do not stop,
+reconfigure, or include x-ui in this Compose project.
 
-The host firewall must allow TCP `80`, `443`, and `7000`, plus TCP and UDP
-`20000-49999`. Keep the host-level `44999` rule for x-ui; FRP does not bind it.
+The Agent API requires TCP `443`; FRPS requires TCP `7000` and TCP/UDP
+`20000-49999`. TCP `80` is only needed externally for HTTP redirect or an HTTP
+certificate challenge and may remain blocked when neither is used. For
+`x-ui-cohost`, keep the host-level `44999` rule for x-ui; FRP does not bind it.
 Cloud security-group rules must match the host firewall before cutover.
 
 ## Verification
@@ -47,6 +60,6 @@ docker compose up -d
 ```
 
 Before DNS cutover, verify TLS with `curl --resolve`, confirm the restored
-client and forward counts, test an isolated client, and confirm x-ui ports and
-containers remain healthy. Keep the old relay and a verified off-host backup
-available for rollback.
+client and forward counts, and test an isolated client. For `x-ui-cohost`, also
+confirm x-ui ports and containers remain healthy. Keep the old relay and a
+verified off-host backup available for rollback.

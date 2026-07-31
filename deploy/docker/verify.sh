@@ -3,6 +3,15 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 compose=(docker compose --file "$script_dir/compose.yaml")
+env_file="/etc/deep-assess/frp-relay/server.env"
+
+if [ ! -f "$env_file" ]; then
+  echo "protected server environment is missing: $env_file" >&2
+  exit 1
+fi
+
+deployment_profile="$(awk -F= '$1 == "FRP_RELAY_DEPLOYMENT_PROFILE" {print substr($0, index($0, "=") + 1); exit}' "$env_file")"
+deployment_profile="${deployment_profile:-x-ui-cohost}"
 
 "${compose[@]}" ps
 curl --fail --silent --show-error http://127.0.0.1:8010/health
@@ -21,9 +30,18 @@ for port in 80 443 7000 7500 8010 8080; do
   fi
 done
 
-if ! docker inspect --format '{{.State.Running}}' x-ui 2>/dev/null | grep -qx true; then
-  echo "unrelated x-ui container is not running" >&2
-  exit 1
-fi
+case "$deployment_profile" in
+  dedicated) ;;
+  x-ui-cohost)
+    if ! docker inspect --format '{{.State.Running}}' x-ui 2>/dev/null | grep -qx true; then
+      echo "unrelated x-ui container is not running" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "unsupported FRP_RELAY_DEPLOYMENT_PROFILE: $deployment_profile" >&2
+    exit 1
+    ;;
+esac
 
-echo "FRP Relay Docker verification passed"
+echo "FRP Relay Docker verification passed: $deployment_profile"
