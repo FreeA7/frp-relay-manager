@@ -63,14 +63,11 @@ services:
     restart: unless-stopped
 
   web:
-    image: deep-assess/edge-gateway-web:0.3.0-rc.1
+    image: deep-assess/edge-gateway-web:0.3.0-rc.4
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.panel
     network_mode: host
-    volumes:
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-      - /var/www/certbot:/var/www/certbot:ro
     read_only: true
     tmpfs:
       - /var/cache/nginx:size=32m

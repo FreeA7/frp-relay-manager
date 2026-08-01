@@ -1,10 +1,10 @@
 # Docker Deployment
 
-This profile runs the Edge Gateway API, `frps`, and nginx web console as one
-Docker Compose project with host networking. Host networking is required
-because FRP binds dynamic TCP and UDP forwarding ports. The web container also
-terminates TLS for the DeepAssess application domains and proxies them through
-the separately managed OpenVPN tunnels.
+This profile runs the Edge Gateway API, `frps`, and the internal web console as
+one Docker Compose project with host networking. Host networking is required
+because FRP binds dynamic TCP and UDP forwarding ports. The web container
+listens only on `127.0.0.1:18081`; the separately deployed Edge ingress owns
+ports 80 and 443, TLS certificates, and public-domain routing.
 
 ## Host Paths
 
@@ -14,8 +14,7 @@ the separately managed OpenVPN tunnels.
 - SQLite data: `/var/lib/deep-assess/frp-relay` (`0700`, UID/GID `10001`)
 - frps logs: `/var/log/deep-assess/frps` (`0750`, UID/GID `10002`)
 - OpenVPN status files: `/run/deepassess-openvpn` (read-only in the API container, group GID `10003`)
-- TLS material: `/etc/letsencrypt` (read-only in the web container)
-- ACME webroot: `/var/www/certbot` (read-only in the web container)
+- Edge ingress source: `services/edge-ingress/` in the parent operations repository
 
 Do not copy a live SQLite file. Use SQLite's backup API, verify the backup, and
 transfer it with mode `0600`. Preserve the signing secret, frps token, Fleet
@@ -46,9 +45,10 @@ database does not already assign a forward to that port, and do not stop,
 reconfigure, or include x-ui in this Compose project. It installs the
 coexistence template at `frps.toml`.
 
-The web console and business ingress require TCP `443`; FRPS requires TCP
+The independent Edge ingress requires TCP `80` and `443`; FRPS requires TCP
 `7000` and TCP/UDP `20000-49999`; OpenVPN uses UDP `51820` and `51821` outside
-the FRP pool. TCP `80` serves redirects and HTTP certificate challenges. For
+the FRP pool. TCP `80` serves redirects and HTTP certificate challenges. The
+FRP web console is an internal upstream on TCP `18081`. For
 `x-ui-cohost`, keep the host-level `44999` rule for x-ui; FRP does not bind it.
 Cloud security-group rules must match the host firewall before cutover.
 

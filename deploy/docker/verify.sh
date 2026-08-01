@@ -16,6 +16,10 @@ deployment_profile="${deployment_profile:-x-ui-cohost}"
 "${compose[@]}" ps
 curl --fail --silent --show-error http://127.0.0.1:8010/health
 printf '\n'
+curl --fail --silent --show-error \
+  --header 'Host: panel.tunnel.freea7.fun' \
+  http://127.0.0.1:18081/health
+printf '\n'
 
 frps_version="$("${compose[@]}" exec -T frps frps --version)"
 if [ "$frps_version" != "0.68.1" ]; then
@@ -23,12 +27,17 @@ if [ "$frps_version" != "0.68.1" ]; then
   exit 1
 fi
 
-for port in 80 443 7000 7500 8010 8080; do
+for port in 80 443 7000 7500 8010 8080 18081; do
   if ! ss -H -lnt "sport = :${port}" | grep -q .; then
     echo "required TCP listener is missing: $port" >&2
     exit 1
   fi
 done
+
+if ! docker inspect --format '{{.State.Running}}' deep-assess-edge-ingress-ingress-1 2>/dev/null | grep -qx true; then
+  echo "independent Edge ingress container is not running" >&2
+  exit 1
+fi
 
 case "$deployment_profile" in
   dedicated)
