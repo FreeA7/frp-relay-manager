@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 TUNNELS = (
     ("core", "Core", "10.254.0.0/29"),
     ("engine", "Engine", "10.254.0.8/29"),
+    ("backup", "Backup", "10.254.0.16/29"),
 )
 
 

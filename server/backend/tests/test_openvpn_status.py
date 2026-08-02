@@ -40,6 +40,9 @@ def test_reads_status_v3(monkeypatch, tmp_path: Path, status_text: str):
     assert core["clients"][0]["virtual_address"] == "10.254.0.2"
     assert core["clients"][0]["bytes_sent"] == 2048
     assert result["tunnels"][1]["status"] == "unavailable"
+    assert result["tunnels"][2]["id"] == "backup"
+    assert result["tunnels"][2]["network"] == "10.254.0.16/29"
+    assert result["tunnels"][2]["status"] == "unavailable"
 
 
 def test_endpoint_requires_existing_admin_login(tmp_path: Path):
@@ -55,7 +58,7 @@ def test_endpoint_requires_existing_admin_login(tmp_path: Path):
         headers = {"Authorization": "Bearer " + login.json()["access_token"]}
         response = client.get("/api/openvpn/status", headers=headers)
         assert response.status_code == 200
-        assert response.json()["tunnel_count"] == 2
+        assert response.json()["tunnel_count"] == 3
 
 
 class FrozenDateTime:

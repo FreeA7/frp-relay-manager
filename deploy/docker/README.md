@@ -13,7 +13,7 @@ ports 80 and 443, TLS certificates, and public-domain routing.
 - Generated frps configuration: `/etc/deep-assess/frp-relay/frps.toml` (`0644`)
 - SQLite data: `/var/lib/deep-assess/frp-relay` (`0700`, UID/GID `10001`)
 - frps logs: `/var/log/deep-assess/frps` (`0750`, UID/GID `10002`)
-- OpenVPN status files: `/run/deepassess-openvpn` (read-only in the API container, group GID `10003`)
+- OpenVPN status files: `/run/deepassess-openvpn` (Core, Engine, and Backup; read-only in the API container, group GID `10003`)
 - Edge ingress source: `services/edge-ingress/` in the parent operations repository
 
 Do not copy a live SQLite file. Use SQLite's backup API, verify the backup, and
