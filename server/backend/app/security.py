@@ -4,13 +4,9 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
-
-
-PASSWORD_ITERATIONS = 260_000
 
 
 def utc_now() -> datetime:
@@ -19,32 +15,6 @@ def utc_now() -> datetime:
 
 def utc_iso() -> str:
     return utc_now().isoformat()
-
-
-def hash_password(password: str) -> str:
-    salt = os.urandom(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS)
-    return "pbkdf2_sha256${}${}${}".format(
-        PASSWORD_ITERATIONS,
-        _b64_encode(salt),
-        _b64_encode(digest),
-    )
-
-
-def verify_password(password: str, stored_hash: str) -> bool:
-    try:
-        algorithm, iterations, salt, digest = stored_hash.split("$", 3)
-        if algorithm != "pbkdf2_sha256":
-            return False
-        computed = hashlib.pbkdf2_hmac(
-            "sha256",
-            password.encode("utf-8"),
-            _b64_decode(salt),
-            int(iterations),
-        )
-        return hmac.compare_digest(_b64_encode(computed), digest)
-    except (ValueError, TypeError):
-        return False
 
 
 def generate_secret_urlsafe(bytes_count: int = 32) -> str:
@@ -106,4 +76,3 @@ def _b64_encode(value: bytes) -> str:
 def _b64_decode(value: str) -> bytes:
     padding = "=" * (-len(value) % 4)
     return base64.urlsafe_b64decode(value + padding)
-

@@ -11,7 +11,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from .config import Settings, load_settings
@@ -22,7 +21,6 @@ from .security import (
     generate_secret_urlsafe,
     hash_secret,
     utc_iso,
-    verify_password,
     verify_signed_token,
 )
 
@@ -32,17 +30,7 @@ FORWARD_STATUSES = {"active", "paused"}
 RESERVED_PORTS = {22, 80, 443, 7000, 7500, 8000, 8010}
 CLIENT_ONLINE_GRACE_SECONDS = 120
 DEFAULT_SSH_FORWARD_NOTE = "默认 SSH"
-SERVICE_VERSION = "0.4.0-rc.1"
-
-
-class LoginRequest(BaseModel):
-    email: str
-    password: str
-
-
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+SERVICE_VERSION = "0.4.0-rc.2"
 
 
 class EnrollmentTokenCreate(BaseModel):
@@ -141,25 +129,11 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     async def lifespan(app_instance: FastAPI):
         repo: Repository = app.state.repo
         repo.init_db()
-        repo.ensure_admin(
-            user_id="admin",
-            email=resolved_settings.admin_email,
-            password=resolved_settings.admin_password,
-            reset_password=resolved_settings.reset_admin_password,
-        )
         yield
 
     app = FastAPI(title="DeepAssess Edge Gateway API", version=SERVICE_VERSION, lifespan=lifespan)
     app.state.settings = resolved_settings
     app.state.repo = Repository(resolved_settings.database_path)
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=resolved_settings.allowed_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
 
     @app.get("/health")
     def health() -> Dict[str, str]:
@@ -173,25 +147,6 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         del fleet_reader
         rows = repo.fetchall("SELECT * FROM clients ORDER BY hostname, created_at")
         return {"observed_at": utc_iso(), "clients": [format_fleet_client(row) for row in rows]}
-
-    @app.post("/api/auth/login", response_model=TokenResponse)
-    def login(payload: LoginRequest, repo: Repository = Depends(get_repo), settings_dep: Settings = Depends(get_settings)) -> TokenResponse:
-        user = repo.fetchone("SELECT * FROM users WHERE email = ?", (payload.email,))
-        if not user or not verify_password(payload.password, user["password_hash"]):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-
-        token = create_signed_token(
-            settings_dep.secret_key,
-            subject=user["id"],
-            token_type="admin",
-            expires_delta=timedelta(minutes=settings_dep.access_token_ttl_minutes),
-            extra={"email": user["email"]},
-        )
-        return TokenResponse(access_token=token)
-
-    @app.get("/api/me")
-    def me(admin: Dict[str, Any] = Depends(require_admin)) -> Dict[str, Any]:
-        return {"id": admin["sub"], "email": admin.get("email")}
 
     @app.get("/api/dashboard")
     def dashboard(
@@ -606,17 +561,6 @@ def get_repo(request: Request) -> Repository:
     return request.app.state.repo
 
 
-def require_admin(
-    authorization: Optional[str] = Header(default=None),
-    settings_dep: Settings = Depends(get_settings),
-) -> Dict[str, Any]:
-    token = bearer_token(authorization)
-    try:
-        return verify_signed_token(settings_dep.secret_key, token, expected_type="admin")
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
-
-
 def require_operator(
     authorization: Optional[str] = Header(default=None),
     x_tianshu_user: Optional[str] = Header(default=None),
@@ -624,21 +568,17 @@ def require_operator(
     settings_dep: Settings = Depends(get_settings),
 ) -> Dict[str, Any]:
     token = bearer_token(authorization)
-    if len(settings_dep.tianshu_token) >= 32 and hmac.compare_digest(token, settings_dep.tianshu_token):
-        actor = clean_optional_text(x_tianshu_user)
-        role = clean_optional_text(x_tianshu_role)
-        if not actor or len(actor) > 254 or role not in {"admin", "editor", "viewer"}:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid Tianshu operator identity",
-            )
-        return {"sub": actor, "email": actor, "role": role, "source": "tianshu"}
+    if len(settings_dep.tianshu_token) < 32 or not hmac.compare_digest(token, settings_dep.tianshu_token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Tianshu service token")
 
-    try:
-        legacy = verify_signed_token(settings_dep.secret_key, token, expected_type="admin")
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
-    return {**legacy, "role": "admin", "source": "legacy-admin"}
+    actor = clean_optional_text(x_tianshu_user)
+    role = clean_optional_text(x_tianshu_role)
+    if not actor or len(actor) > 254 or role not in {"admin", "editor", "viewer"}:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Tianshu operator identity",
+        )
+    return {"sub": actor, "email": actor, "role": role, "source": "tianshu"}
 
 
 def require_admin_operator(operator: Dict[str, Any] = Depends(require_operator)) -> Dict[str, Any]:

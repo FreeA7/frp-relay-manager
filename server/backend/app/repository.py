@@ -4,9 +4,6 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from .security import hash_password, utc_iso
-
-
 class Repository:
     def __init__(self, database_path: Path):
         self.database_path = database_path
@@ -22,12 +19,7 @@ class Repository:
         with self.connect() as db:
             db.executescript(
                 """
-                CREATE TABLE IF NOT EXISTS users (
-                    id TEXT PRIMARY KEY,
-                    email TEXT NOT NULL UNIQUE,
-                    password_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
+                DROP TABLE IF EXISTS users;
 
                 CREATE TABLE IF NOT EXISTS enrollment_tokens (
                     id TEXT PRIMARY KEY,
@@ -127,21 +119,6 @@ class Repository:
         for name, definition in columns.items():
             if name not in existing:
                 db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
-
-    def ensure_admin(self, user_id: str, email: str, password: str, reset_password: bool = False) -> None:
-        existing = self.fetchone("SELECT id FROM users WHERE email = ?", (email,))
-        if existing and not reset_password:
-            return
-
-        password_hash = hash_password(password)
-        now = utc_iso()
-        if existing:
-            self.execute("UPDATE users SET password_hash = ? WHERE email = ?", (password_hash, email))
-        else:
-            self.execute(
-                "INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
-                (user_id, email, password_hash, now),
-            )
 
     def execute(self, sql: str, params: Tuple[Any, ...] = ()) -> None:
         with self.connect() as db:

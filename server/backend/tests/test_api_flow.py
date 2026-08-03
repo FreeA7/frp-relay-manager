@@ -17,13 +17,8 @@ def make_settings(tmp_path: Path) -> Settings:
         project_root=tmp_path,
         data_dir=tmp_path / "data",
         database_path=tmp_path / "data" / "test.db",
-        admin_email="freea7@futurememetech.com",
-        admin_password="test-password",
-        reset_admin_password=False,
         secret_key="test-secret",
-        access_token_ttl_minutes=60,
         agent_token_ttl_days=7,
-        allowed_origins=["*"],
         public_ip="45.141.136.217",
         base_domain="tunnel.freea7.fun",
         panel_domain="panel.tunnel.freea7.fun",
@@ -42,15 +37,13 @@ def make_settings(tmp_path: Path) -> Settings:
 
 def test_admin_agent_forward_flow(tmp_path):
     app = create_app(make_settings(tmp_path))
+    admin_headers = {
+        "Authorization": "Bearer tianshu-token-0123456789abcdefghi",
+        "X-Tianshu-User": "operator@futurememetech.com",
+        "X-Tianshu-Role": "admin",
+    }
 
     with TestClient(app) as client:
-        login = client.post(
-            "/api/auth/login",
-            json={"email": "freea7@futurememetech.com", "password": "test-password"},
-        )
-        assert login.status_code == 200
-        admin_headers = {"Authorization": "Bearer " + login.json()["access_token"]}
-
         enrollment = client.post(
             "/api/enrollment-tokens",
             json={"label": "local test", "expires_in_hours": 1},
@@ -268,15 +261,13 @@ def test_tianshu_operator_auth_rejects_missing_identity(tmp_path):
 
 def test_stale_heartbeat_is_reported_offline(tmp_path):
     app = create_app(make_settings(tmp_path))
+    admin_headers = {
+        "Authorization": "Bearer tianshu-token-0123456789abcdefghi",
+        "X-Tianshu-User": "operator@futurememetech.com",
+        "X-Tianshu-Role": "admin",
+    }
 
     with TestClient(app) as client:
-        login = client.post(
-            "/api/auth/login",
-            json={"email": "freea7@futurememetech.com", "password": "test-password"},
-        )
-        assert login.status_code == 200
-        admin_headers = {"Authorization": "Bearer " + login.json()["access_token"]}
-
         enrollment = client.post(
             "/api/enrollment-tokens",
             json={"label": "stale test", "expires_in_hours": 1},
@@ -310,3 +301,25 @@ def test_stale_heartbeat_is_reported_offline(tmp_path):
         assert dashboard.status_code == 200
         assert dashboard.json()["client_count"] == 1
         assert dashboard.json()["online_client_count"] == 0
+
+
+def test_legacy_login_cors_and_admin_table_are_removed(tmp_path):
+    app = create_app(make_settings(tmp_path))
+
+    with TestClient(app) as client:
+        assert client.post(
+            "/api/auth/login",
+            json={"email": "legacy@futurememetech.com", "password": "unused"},
+        ).status_code == 404
+        assert client.get("/api/me").status_code == 404
+        preflight = client.options(
+            "/api/dashboard",
+            headers={
+                "Origin": "https://untrusted.example",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert "access-control-allow-origin" not in preflight.headers
+        assert app.state.repo.fetchone(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'"
+        ) is None

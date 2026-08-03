@@ -65,10 +65,9 @@ Release Manifest. Follow `deploy/docker/README.md` for the Docker Compose
 profile and the parent repository's `upgrade-frp-server.md` for lease, backup,
 verification, observation, and rollback requirements.
 
-Do not use `scripts/deploy-server-scp.ps1` or `deploy/INSTALL_KCHAT.md` for the
-production Edge Gateway. Those files belong to the legacy kchat systemd
-deployment. Preserve client records, forwarding rules, signing material, TLS
-material, and unrelated ingress during every approved deployment.
+The retired kchat deployment path and independent panel artifacts are not part
+of this release. Preserve client records, forwarding rules, signing material,
+TLS material, and unrelated ingress during every approved deployment.
 
 ## Stable Service Entry Points
 

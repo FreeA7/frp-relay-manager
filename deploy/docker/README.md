@@ -1,12 +1,9 @@
 # Docker Deployment
 
-This transitional profile runs the Edge Gateway API, `frps`, and the existing
-internal web console as one Docker Compose project with host networking. The
-API adds the server-to-server operator contract required by Tianshu while the
-legacy console remains available only for the ordered cutover. Host networking is required
-because FRP binds dynamic TCP and UDP forwarding ports. The web container
-listens only on `127.0.0.1:18081`; the separately deployed Edge ingress owns
-ports 80 and 443, TLS certificates, and public-domain routing.
+This profile runs only the Edge Gateway API and `frps` with host networking.
+Human viewing and management belong exclusively to Tianshu. The independent
+Edge ingress owns ports 80 and 443, proxies the protected machine API, and
+returns 404 for ordinary paths on `panel.tunnel.freea7.fun`.
 
 ## Host Paths
 
@@ -20,11 +17,12 @@ ports 80 and 443, TLS certificates, and public-domain routing.
 
 The protected environment must contain a distinct
 `FRP_RELAY_TIANSHU_TOKEN` with at least 32 characters before this release is
-started. Do not reuse any administrator, Fleet, FRPS, Agent, or signing secret.
+started. Do not reuse any Fleet, FRPS, Agent, or signing secret.
 
 Do not copy a live SQLite file. Use SQLite's backup API, verify the backup, and
 transfer it with mode `0600`. Preserve the signing secret, frps token, Fleet
-read token, client records, forwarding rules, and administrator password hash.
+read token, client records, forwarding rules, and audit history. The release
+drops only the retired local `users` table.
 
 ## Deployment Profiles
 
@@ -36,8 +34,7 @@ FRP_RELAY_DEPLOYMENT_PROFILE=dedicated
 
 The `dedicated` profile does not require an unrelated service or a reserved
 FRP forwarding port. It installs `frps.dedicated.toml`, which allows the full
-TCP/UDP `20000-49999` pool. Keep future VPN ports outside that pool and do not
-open them until the VPN release is deployed.
+TCP/UDP `20000-49999` pool. Keep VPN ports outside that pool.
 
 For a host that already runs x-ui/xray on TCP `18888` and `44999`, use:
 
@@ -52,9 +49,9 @@ reconfigure, or include x-ui in this Compose project. It installs the
 coexistence template at `frps.toml`.
 
 The independent Edge ingress requires TCP `80` and `443`; FRPS requires TCP
-`7000` and TCP/UDP `20000-49999`; OpenVPN uses UDP `51820` and `51821` outside
-the FRP pool. TCP `80` serves redirects and HTTP certificate challenges. The
-FRP web console is an internal upstream on TCP `18081`. For
+`7000` and TCP/UDP `20000-49999`; OpenVPN uses ports outside the FRP pool. TCP
+`80` serves redirects and HTTP certificate challenges. TCP `18081` must be
+closed after the retired Web container is removed. For
 `x-ui-cohost`, keep the host-level `44999` rule for x-ui; FRP does not bind it.
 Cloud security-group rules must match the host firewall before cutover.
 
@@ -66,12 +63,13 @@ Before starting, run `docker compose config` and confirm ports `80`, `443`,
 ```bash
 ./prepare-host.sh
 docker compose build
-docker compose up -d
+docker compose up -d --remove-orphans
 ./verify.sh
 ```
 
-Before Tianshu cutover, verify TLS, the Tianshu viewer contract, all four VPN
-status files, the restored client and forward counts, and an isolated client.
+Verify TLS, panel root and legacy login 404 responses, the Tianshu viewer
+contract, all four VPN status files, the restored client and forward counts,
+and an isolated client.
 For `x-ui-cohost`, also
 confirm x-ui ports and containers remain healthy. Keep the old relay and a
 verified off-host backup available for rollback.

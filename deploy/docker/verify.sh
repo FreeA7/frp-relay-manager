@@ -16,10 +16,27 @@ deployment_profile="${deployment_profile:-x-ui-cohost}"
 "${compose[@]}" ps
 curl --fail --silent --show-error http://127.0.0.1:8010/health
 printf '\n'
-curl --fail --silent --show-error \
+curl --fail --silent --show-error --insecure \
   --header 'Host: panel.tunnel.freea7.fun' \
-  http://127.0.0.1:18081/health
+  https://127.0.0.1/health
 printf '\n'
+
+root_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --insecure \
+  --header 'Host: panel.tunnel.freea7.fun' https://127.0.0.1/)"
+if [ "$root_status" != "404" ]; then
+  echo "panel root must return 404, got: $root_status" >&2
+  exit 1
+fi
+
+legacy_login_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --insecure \
+  --header 'Host: panel.tunnel.freea7.fun' \
+  --header 'Content-Type: application/json' \
+  --data '{"email":"removed@futurememetech.com","password":"removed"}' \
+  https://127.0.0.1/api/auth/login)"
+if [ "$legacy_login_status" != "404" ]; then
+  echo "legacy FRP login must return 404, got: $legacy_login_status" >&2
+  exit 1
+fi
 
 "${compose[@]}" exec -T api python -c \
   "import json,os,urllib.request; token=os.environ.get('FRP_RELAY_TIANSHU_TOKEN',''); assert len(token)>=32; request=urllib.request.Request('http://127.0.0.1:8010/api/dashboard',headers={'Authorization':'Bearer '+token,'X-Tianshu-User':'release-verifier@futurememetech.com','X-Tianshu-Role':'viewer'}); assert json.load(urllib.request.urlopen(request,timeout=5))['client_count']>=0"
@@ -30,12 +47,25 @@ if [ "$frps_version" != "0.68.1" ]; then
   exit 1
 fi
 
-for port in 80 443 7000 7500 8010 8080 18081; do
+for port in 80 443 7000 7500 8010 8080; do
   if ! ss -H -lnt "sport = :${port}" | grep -q .; then
     echo "required TCP listener is missing: $port" >&2
     exit 1
   fi
 done
+
+if ss -H -lnt "sport = :18081" | grep -q .; then
+  echo "removed FRP web listener is still active: 18081" >&2
+  exit 1
+fi
+
+if docker ps --format '{{.Names}}' | grep -qx 'deep-assess-edge-gateway-web-1'; then
+  echo "removed FRP web container is still running" >&2
+  exit 1
+fi
+
+"${compose[@]}" exec -T api python -c \
+  "import os,sqlite3; db=sqlite3.connect(os.environ['FRP_RELAY_DATABASE']); assert db.execute(\"SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'\").fetchone() is None"
 
 if ! docker inspect --format '{{.State.Running}}' deep-assess-edge-ingress-ingress-1 2>/dev/null | grep -qx true; then
   echo "independent Edge ingress container is not running" >&2

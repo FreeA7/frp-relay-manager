@@ -40,24 +40,13 @@ production application and Compose profile are under:
 Connect with `ssh edge-gateway` only after the live-state check. Do not copy a
 working tree directly to production.
 
-## Legacy kchat Sync
-
-`scripts/deploy-server-scp.ps1` copies `server/` and `deploy/` to
-`kchat:/src/frp_relay`. It is retained only for the legacy systemd deployment
-and must not be pointed at `edge-gateway` or used for a production update.
-
-The legacy sync intentionally leaves `client/`, `docs/`, `.git/`, local caches,
-and secrets on the local machine.
-
 ## Secret Handling
 
 - Keep production server secrets in
   `edge-gateway:/etc/deep-assess/frp-relay/server.env` with mode `0600`.
-- Treat `kchat:/src/frp_relay/.env` as legacy host state; never copy it into a
-  new deployment as a substitute for an approved secret migration.
 - Commit only `.env.example` files.
-- Never print DNSPod credentials, frps auth tokens, JWT secrets, or generated
-  admin passwords in logs or documentation.
+- Never print DNSPod credentials, frps auth tokens, signing secrets, or service
+  tokens in logs or documentation.
 
 ## Local Backend
 
@@ -71,15 +60,4 @@ python -m venv .venv
 Use `server/.env.example` as the template for local environment variables. Real
 values should live in an untracked `.env`.
 
-## Local Frontend
-
-Node is not bundled in this repository. After installing Node LTS:
-
-```powershell
-cd .\server\frontend
-npm install
-npm run dev
-```
-
-The frontend calls the same origin by default. For local API proxying, set
-`VITE_API_BASE` in an untracked frontend `.env` if needed.
+There is no FRP frontend. Develop and test human-facing management in Tianshu.

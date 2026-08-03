@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, Optional
 
 
 def _read_env_file(path: Path) -> Dict[str, str]:
@@ -28,12 +28,6 @@ def _first_existing(paths: Iterable[Optional[Path]]) -> Optional[Path]:
         if path and path.exists():
             return path
     return None
-
-
-def _bool(value: str, default: bool = False) -> bool:
-    if value == "":
-        return default
-    return value.lower() in {"1", "true", "yes", "on"}
 
 
 def _port_set(value: str) -> frozenset[int]:
@@ -61,13 +55,8 @@ class Settings:
     project_root: Path
     data_dir: Path
     database_path: Path
-    admin_email: str
-    admin_password: str
-    reset_admin_password: bool
     secret_key: str
-    access_token_ttl_minutes: int
     agent_token_ttl_days: int
-    allowed_origins: List[str]
     public_ip: str
     base_domain: str
     panel_domain: str
@@ -113,13 +102,8 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         project_root=project_root,
         data_dir=data_dir,
         database_path=database_path,
-        admin_email=get("FRP_RELAY_ADMIN_EMAIL", "freea7@futurememetech.com"),
-        admin_password=get("FRP_RELAY_ADMIN_PASSWORD", "change-me-now"),
-        reset_admin_password=_bool(get("FRP_RELAY_RESET_ADMIN_PASSWORD", "false")),
         secret_key=get("FRP_RELAY_SECRET_KEY", "dev-only-change-this-secret"),
-        access_token_ttl_minutes=int(get("FRP_RELAY_ACCESS_TOKEN_TTL_MINUTES", "720")),
         agent_token_ttl_days=int(get("FRP_RELAY_AGENT_TOKEN_TTL_DAYS", "90")),
-        allowed_origins=[item.strip() for item in get("FRP_RELAY_ALLOWED_ORIGINS", "*").split(",") if item.strip()],
         public_ip=get("FRP_RELAY_PUBLIC_IP", "45.141.136.217"),
         base_domain=get("FRP_RELAY_BASE_DOMAIN", "tunnel.freea7.fun"),
         panel_domain=get("FRP_RELAY_PANEL_DOMAIN", "panel.tunnel.freea7.fun"),

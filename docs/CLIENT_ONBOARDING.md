@@ -5,7 +5,7 @@ Manager.
 
 ## Access Points
 
-- Admin panel: `https://panel.tunnel.freea7.fun`
+- Human management console: Tianshu
 - Agent API base URL: `https://panel.tunnel.freea7.fun`
 - FRP server address: use the address in the agent-generated configuration and
   confirm it against the current Relay dashboard; never copy an IP from this
@@ -19,7 +19,7 @@ Server administrators connect through `ssh edge-gateway` after confirming the
 alias against fresh Relay state. The `kchat` alias is a legacy server and is not
 the production management target.
 
-The administrator must create an enrollment token in the panel and send it to
+The administrator must create an enrollment token in Tianshu and send it to
 the client operator. The token is one-time use; request a new token if
 registration fails with `Invalid enrollment token`.
 
@@ -86,7 +86,7 @@ registration, the agent writes `agent-state.json` and reuses its agent token.
 The relay client name is always the machine hostname. The agent automatically
 collects CPU, GPU/display controller, total memory, root filesystem capacity,
 and OS version. The optional hardware fields override auto-detection when set
-and are displayed in the relay panel after the next registration or heartbeat.
+and are displayed in Tianshu after the next registration or heartbeat.
 Memory and disk values use bytes.
 
 ## Register and Test Agent
@@ -107,8 +107,8 @@ Expected results:
 
 - `agent-state.json` is created.
 - `frpc.generated.toml` is created.
-- The admin panel shows the client as online.
-- The admin panel shows CPU, GPU/display controller, memory, disk, and OS values.
+- Tianshu shows the client as online.
+- Tianshu shows CPU, GPU/display controller, memory, disk, and OS values.
 
 Run continuously:
 

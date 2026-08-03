@@ -47,17 +47,17 @@ def test_reads_status_v3(monkeypatch, tmp_path: Path, status_text: str):
     assert result["tunnels"][3]["network"] == "10.254.0.24/29"
 
 
-def test_endpoint_requires_existing_admin_login(tmp_path: Path):
+def test_endpoint_requires_tianshu_operator(tmp_path: Path):
     settings = make_settings(tmp_path)
     app = create_app(settings)
 
     with TestClient(app) as client:
         assert client.get("/api/openvpn/status").status_code == 401
-        login = client.post(
-            "/api/auth/login",
-            json={"email": settings.admin_email, "password": settings.admin_password},
-        )
-        headers = {"Authorization": "Bearer " + login.json()["access_token"]}
+        headers = {
+            "Authorization": "Bearer tianshu-token-0123456789abcdefghi",
+            "X-Tianshu-User": "viewer@futurememetech.com",
+            "X-Tianshu-Role": "viewer",
+        }
         response = client.get("/api/openvpn/status", headers=headers)
         assert response.status_code == 200
         assert response.json()["tunnel_count"] == 4

@@ -1,6 +1,6 @@
 # nginx
 
-nginx templates for `panel.tunnel.freea7.fun`.
+Legacy wildcard tunnel nginx template. Production TLS ingress is owned by the
+parent operations repository under `services/edge-ingress/`.
 
-Future config should preserve the existing `api.freea7.fun` site and should pass
-`nginx -t` before reload.
+There is intentionally no FRP panel template or static Web root here.

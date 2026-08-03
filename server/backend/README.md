@@ -4,7 +4,6 @@ FastAPI backend for the server-side relay manager.
 
 Responsibilities:
 
-- admin authentication
 - client enrollment and heartbeat handling
 - port check requests and results
 - forwarding rule CRUD
@@ -26,7 +25,8 @@ python -m venv .venv
 .\.venv\Scripts\python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8010
 ```
 
-The app initializes SQLite and the admin account on startup.
+The app initializes SQLite and removes the retired local `users` table on
+startup. It has no local human account or login endpoint.
 
 `FRP_RELAY_TIANSHU_TOKEN` enables the server-to-server management path used by
 Tianshu. Tianshu supplies the authenticated operator in `X-Tianshu-User` and
@@ -34,5 +34,5 @@ Tianshu. Tianshu supplies the authenticated operator in `X-Tianshu-User` and
 the admin role. The integration token never belongs in browser storage.
 
 Set a separate `FRP_RELAY_FLEET_READ_TOKEN` of at least 32 characters before
-enabling the Fleet integration endpoint. Do not reuse the admin password,
-signing key, frps token, or agent token.
+enabling the Fleet integration endpoint. Do not reuse the Tianshu service
+token, signing key, frps token, or agent token.
