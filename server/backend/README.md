@@ -12,6 +12,7 @@ Responsibilities:
 - latest device identity and release observation snapshots
 - scoped, read-only Fleet integration
 - authenticated, read-only OpenVPN status monitoring
+- scoped Tianshu operator access with server-side role enforcement and write auditing
 
 The production service should bind to `127.0.0.1:8010` behind nginx.
 OpenVPN status-version-3 files are read from `/run/deepassess-openvpn` through
@@ -26,6 +27,11 @@ python -m venv .venv
 ```
 
 The app initializes SQLite and the admin account on startup.
+
+`FRP_RELAY_TIANSHU_TOKEN` enables the server-to-server management path used by
+Tianshu. Tianshu supplies the authenticated operator in `X-Tianshu-User` and
+`X-Tianshu-Role`; viewer and editor roles are read-only, while mutations require
+the admin role. The integration token never belongs in browser storage.
 
 Set a separate `FRP_RELAY_FLEET_READ_TOKEN` of at least 32 characters before
 enabling the Fleet integration endpoint. Do not reuse the admin password,

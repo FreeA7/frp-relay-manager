@@ -32,7 +32,7 @@ FORWARD_STATUSES = {"active", "paused"}
 RESERVED_PORTS = {22, 80, 443, 7000, 7500, 8000, 8010}
 CLIENT_ONLINE_GRACE_SECONDS = 120
 DEFAULT_SSH_FORWARD_NOTE = "默认 SSH"
-SERVICE_VERSION = "0.3.0-rc.2"
+SERVICE_VERSION = "0.4.0-rc.1"
 
 
 class LoginRequest(BaseModel):
@@ -197,8 +197,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     def dashboard(
         repo: Repository = Depends(get_repo),
         settings_dep: Settings = Depends(get_settings),
-        admin: Dict[str, Any] = Depends(require_admin),
+        operator: Dict[str, Any] = Depends(require_operator),
     ) -> Dict[str, Any]:
+        del operator
         clients = repo.fetchall("SELECT * FROM clients ORDER BY last_seen_at DESC, created_at DESC")
         forwards = repo.fetchall("SELECT * FROM forwards ORDER BY created_at DESC")
         pending_checks = repo.fetchall("SELECT * FROM port_check_tasks WHERE status = 'pending' ORDER BY created_at DESC")
@@ -216,9 +217,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     @app.get("/api/openvpn/status")
     def openvpn_status(
         settings_dep: Settings = Depends(get_settings),
-        admin: Dict[str, Any] = Depends(require_admin),
+        operator: Dict[str, Any] = Depends(require_operator),
     ) -> Dict[str, Any]:
-        del admin
+        del operator
         return read_openvpn_status(
             settings_dep.openvpn_status_dir,
             settings_dep.openvpn_status_stale_seconds,
@@ -228,7 +229,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     def create_enrollment_token(
         payload: EnrollmentTokenCreate,
         repo: Repository = Depends(get_repo),
-        admin: Dict[str, Any] = Depends(require_admin),
+        operator: Dict[str, Any] = Depends(require_admin_operator),
     ) -> EnrollmentTokenResponse:
         token_id = str(uuid.uuid4())
         raw_token = "enr_" + generate_secret_urlsafe(32)
@@ -239,6 +240,12 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             VALUES (?, ?, ?, ?, NULL, ?)
             """,
             (token_id, hash_secret(raw_token), payload.label, expires_at, utc_iso()),
+        )
+        record_audit(
+            repo,
+            operator,
+            "enrollment-token.created",
+            {"token_id": token_id, "label": payload.label},
         )
         return EnrollmentTokenResponse(id=token_id, token=raw_token, label=payload.label, expires_at=expires_at)
 
@@ -422,7 +429,11 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/api/clients")
-    def list_clients(repo: Repository = Depends(get_repo), admin: Dict[str, Any] = Depends(require_admin)) -> Dict[str, Any]:
+    def list_clients(
+        repo: Repository = Depends(get_repo),
+        operator: Dict[str, Any] = Depends(require_operator),
+    ) -> Dict[str, Any]:
+        del operator
         rows = repo.fetchall("SELECT * FROM clients ORDER BY last_seen_at DESC, created_at DESC")
         return {"items": [format_client(row) for row in rows]}
 
@@ -430,7 +441,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     def create_port_check(
         payload: PortCheckCreate,
         repo: Repository = Depends(get_repo),
-        admin: Dict[str, Any] = Depends(require_admin),
+        operator: Dict[str, Any] = Depends(require_admin_operator),
     ) -> Dict[str, Any]:
         protocol = payload.protocol.lower()
         if protocol not in PROTOCOLS:
@@ -446,14 +457,27 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             """,
             (task_id, payload.client_id, protocol, payload.host, payload.port, now, now),
         )
+        record_audit(
+            repo,
+            operator,
+            "port-check.created",
+            {
+                "task_id": task_id,
+                "client_id": payload.client_id,
+                "protocol": protocol,
+                "host": payload.host,
+                "port": payload.port,
+            },
+        )
         return format_port_check(repo.fetchone("SELECT * FROM port_check_tasks WHERE id = ?", (task_id,)))
 
     @app.get("/api/port-checks/{task_id}")
     def get_port_check(
         task_id: str,
         repo: Repository = Depends(get_repo),
-        admin: Dict[str, Any] = Depends(require_admin),
+        operator: Dict[str, Any] = Depends(require_operator),
     ) -> Dict[str, Any]:
+        del operator
         task = repo.fetchone("SELECT * FROM port_check_tasks WHERE id = ?", (task_id,))
         if not task:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Port check task not found")
@@ -463,8 +487,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     def list_forwards(
         repo: Repository = Depends(get_repo),
         settings_dep: Settings = Depends(get_settings),
-        admin: Dict[str, Any] = Depends(require_admin),
+        operator: Dict[str, Any] = Depends(require_operator),
     ) -> Dict[str, Any]:
+        del operator
         rows = repo.fetchall("SELECT * FROM forwards ORDER BY created_at DESC")
         return {"items": [format_forward(row, settings_dep) for row in rows]}
 
@@ -473,7 +498,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         payload: ForwardCreate,
         repo: Repository = Depends(get_repo),
         settings_dep: Settings = Depends(get_settings),
-        admin: Dict[str, Any] = Depends(require_admin),
+        operator: Dict[str, Any] = Depends(require_admin_operator),
     ) -> Dict[str, Any]:
         protocol = payload.protocol.lower()
         if protocol not in PROTOCOLS:
@@ -511,6 +536,20 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 now,
             ),
         )
+        record_audit(
+            repo,
+            operator,
+            "forward.created",
+            {
+                "forward_id": forward_id,
+                "client_id": payload.client_id,
+                "protocol": protocol,
+                "local_ip": payload.local_ip,
+                "local_port": payload.local_port,
+                "remote_port": remote_port,
+                "subdomain": subdomain,
+            },
+        )
         return format_forward(repo.fetchone("SELECT * FROM forwards WHERE id = ?", (forward_id,)), settings_dep)
 
     @app.patch("/api/forwards/{forward_id}")
@@ -519,7 +558,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         payload: ForwardUpdate,
         repo: Repository = Depends(get_repo),
         settings_dep: Settings = Depends(get_settings),
-        admin: Dict[str, Any] = Depends(require_admin),
+        operator: Dict[str, Any] = Depends(require_admin_operator),
     ) -> Dict[str, Any]:
         existing = repo.fetchone("SELECT * FROM forwards WHERE id = ?", (forward_id,))
         if not existing:
@@ -535,18 +574,25 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             """,
             (payload.status, payload.note, utc_iso(), forward_id),
         )
+        record_audit(
+            repo,
+            operator,
+            "forward.updated",
+            {"forward_id": forward_id, "status": payload.status, "note": payload.note},
+        )
         return format_forward(repo.fetchone("SELECT * FROM forwards WHERE id = ?", (forward_id,)), settings_dep)
 
     @app.delete("/api/forwards/{forward_id}")
     def delete_forward(
         forward_id: str,
         repo: Repository = Depends(get_repo),
-        admin: Dict[str, Any] = Depends(require_admin),
+        operator: Dict[str, Any] = Depends(require_admin_operator),
     ) -> Dict[str, str]:
         existing = repo.fetchone("SELECT id FROM forwards WHERE id = ?", (forward_id,))
         if not existing:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Forward not found")
         repo.execute("DELETE FROM forwards WHERE id = ?", (forward_id,))
+        record_audit(repo, operator, "forward.deleted", {"forward_id": forward_id})
         return {"status": "deleted"}
 
     return app
@@ -569,6 +615,36 @@ def require_admin(
         return verify_signed_token(settings_dep.secret_key, token, expected_type="admin")
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+
+
+def require_operator(
+    authorization: Optional[str] = Header(default=None),
+    x_tianshu_user: Optional[str] = Header(default=None),
+    x_tianshu_role: Optional[str] = Header(default=None),
+    settings_dep: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    token = bearer_token(authorization)
+    if len(settings_dep.tianshu_token) >= 32 and hmac.compare_digest(token, settings_dep.tianshu_token):
+        actor = clean_optional_text(x_tianshu_user)
+        role = clean_optional_text(x_tianshu_role)
+        if not actor or len(actor) > 254 or role not in {"admin", "editor", "viewer"}:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Tianshu operator identity",
+            )
+        return {"sub": actor, "email": actor, "role": role, "source": "tianshu"}
+
+    try:
+        legacy = verify_signed_token(settings_dep.secret_key, token, expected_type="admin")
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    return {**legacy, "role": "admin", "source": "legacy-admin"}
+
+
+def require_admin_operator(operator: Dict[str, Any] = Depends(require_operator)) -> Dict[str, Any]:
+    if operator.get("role") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrator role required")
+    return operator
 
 
 def require_agent(
@@ -597,6 +673,19 @@ def bearer_token(authorization: Optional[str]) -> str:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     return authorization.split(" ", 1)[1].strip()
+
+
+def record_audit(repo: Repository, operator: Dict[str, Any], action: str, detail: Dict[str, Any]) -> None:
+    repo.execute(
+        "INSERT INTO audit_logs (id, actor, action, detail_json, created_at) VALUES (?, ?, ?, ?, ?)",
+        (
+            str(uuid.uuid4()),
+            str(operator.get("email") or operator.get("sub") or "unknown"),
+            action,
+            json.dumps(detail, ensure_ascii=True, sort_keys=True),
+            utc_iso(),
+        ),
+    )
 
 
 def ensure_client_exists(repo: Repository, client_id: str) -> None:

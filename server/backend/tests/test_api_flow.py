@@ -36,6 +36,7 @@ def make_settings(tmp_path: Path) -> Settings:
         remote_port_min=20000,
         remote_port_max=20010,
         fleet_read_token="fleet-read-token-0123456789abcdef",
+        tianshu_token="tianshu-token-0123456789abcdefghi",
     )
 
 
@@ -214,6 +215,55 @@ def test_reserved_remote_ports_are_not_allocated(tmp_path):
     with pytest.raises(HTTPException) as exc_info:
         validate_remote_port(repo, settings, 20001)
     assert exc_info.value.status_code == 400
+
+
+def test_tianshu_operator_auth_enforces_roles_and_audits_writes(tmp_path):
+    app = create_app(make_settings(tmp_path))
+    viewer_headers = {
+        "Authorization": "Bearer tianshu-token-0123456789abcdefghi",
+        "X-Tianshu-User": "viewer@futurememetech.com",
+        "X-Tianshu-Role": "viewer",
+    }
+    admin_headers = {
+        "Authorization": "Bearer tianshu-token-0123456789abcdefghi",
+        "X-Tianshu-User": "operator@futurememetech.com",
+        "X-Tianshu-Role": "admin",
+    }
+
+    with TestClient(app) as client:
+        dashboard = client.get("/api/dashboard", headers=viewer_headers)
+        assert dashboard.status_code == 200
+
+        forbidden = client.post(
+            "/api/enrollment-tokens",
+            json={"label": "viewer must not create", "expires_in_hours": 1},
+            headers=viewer_headers,
+        )
+        assert forbidden.status_code == 403
+
+        created = client.post(
+            "/api/enrollment-tokens",
+            json={"label": "Tianshu integration", "expires_in_hours": 1},
+            headers=admin_headers,
+        )
+        assert created.status_code == 200
+        audit = app.state.repo.fetchone(
+            "SELECT actor, action, detail_json FROM audit_logs ORDER BY created_at DESC LIMIT 1"
+        )
+        assert audit is not None
+        assert audit["actor"] == "operator@futurememetech.com"
+        assert audit["action"] == "enrollment-token.created"
+        assert created.json()["token"] not in audit["detail_json"]
+
+
+def test_tianshu_operator_auth_rejects_missing_identity(tmp_path):
+    app = create_app(make_settings(tmp_path))
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/dashboard",
+            headers={"Authorization": "Bearer tianshu-token-0123456789abcdefghi"},
+        )
+        assert response.status_code == 401
 
 
 def test_stale_heartbeat_is_reported_offline(tmp_path):
