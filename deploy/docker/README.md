@@ -1,7 +1,9 @@
 # Docker Deployment
 
-This profile runs the Edge Gateway API, `frps`, and the internal web console as
-one Docker Compose project with host networking. Host networking is required
+This transitional profile runs the Edge Gateway API, `frps`, and the existing
+internal web console as one Docker Compose project with host networking. The
+API adds the server-to-server operator contract required by Tianshu while the
+legacy console remains available only for the ordered cutover. Host networking is required
 because FRP binds dynamic TCP and UDP forwarding ports. The web container
 listens only on `127.0.0.1:18081`; the separately deployed Edge ingress owns
 ports 80 and 443, TLS certificates, and public-domain routing.
@@ -13,8 +15,12 @@ ports 80 and 443, TLS certificates, and public-domain routing.
 - Generated frps configuration: `/etc/deep-assess/frp-relay/frps.toml` (`0644`)
 - SQLite data: `/var/lib/deep-assess/frp-relay` (`0700`, UID/GID `10001`)
 - frps logs: `/var/log/deep-assess/frps` (`0750`, UID/GID `10002`)
-- OpenVPN status files: `/run/deepassess-openvpn` (Core, Engine, and Backup; read-only in the API container, group GID `10003`)
+- OpenVPN status files: `/run/deepassess-openvpn` (Core, Engine, Backup, and Future Heart Guard; read-only in the API container, group GID `10003`)
 - Edge ingress source: `services/edge-ingress/` in the parent operations repository
+
+The protected environment must contain a distinct
+`FRP_RELAY_TIANSHU_TOKEN` with at least 32 characters before this release is
+started. Do not reuse any administrator, Fleet, FRPS, Agent, or signing secret.
 
 Do not copy a live SQLite file. Use SQLite's backup API, verify the backup, and
 transfer it with mode `0600`. Preserve the signing secret, frps token, Fleet
@@ -64,7 +70,8 @@ docker compose up -d
 ./verify.sh
 ```
 
-Before DNS cutover, verify TLS with `curl --resolve`, confirm the restored
-client and forward counts, and test an isolated client. For `x-ui-cohost`, also
+Before Tianshu cutover, verify TLS, the Tianshu viewer contract, all four VPN
+status files, the restored client and forward counts, and an isolated client.
+For `x-ui-cohost`, also
 confirm x-ui ports and containers remain healthy. Keep the old relay and a
 verified off-host backup available for rollback.

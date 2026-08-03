@@ -1,7 +1,8 @@
 # Edge Gateway Server Deployment
 
-`edge-gateway` is the production SSH alias for the FRP Server and unified edge
-console. The repository defines releases and procedures; it does not define a
+`edge-gateway` is the production SSH alias for the FRP Server. Tianshu is the
+only human management console; this host owns FRPS, Agent APIs, the operator
+API, and VPN observations. The repository defines releases and procedures; it does not define a
 permanent production IP address.
 
 ## Connection Gate
@@ -71,10 +72,13 @@ material, and unrelated ingress during every approved deployment.
 
 ## Stable Service Entry Points
 
-- Admin panel and Agent API: `https://panel.tunnel.freea7.fun`
+- Agent and protected operator API: `https://panel.tunnel.freea7.fun`
 - FRP tunnel domain: `tunnel.freea7.fun`
 - FRP control port: `7000`
 
-Operators must obtain current client forwarding addresses from the live Relay
-API or Fleet context. These domain names are stable service identifiers; their
-resolved addresses remain live state and may change.
+Operators use Tianshu for all human viewing and management. The panel domain is
+retained for machine API compatibility and does not remain a human login or Web
+application after the final cutover. Operators must obtain current client
+forwarding addresses from Tianshu, the live Relay API, or Fleet context. These
+domain names are stable service identifiers; their resolved addresses remain
+live state and may change.

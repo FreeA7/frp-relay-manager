@@ -21,6 +21,9 @@ curl --fail --silent --show-error \
   http://127.0.0.1:18081/health
 printf '\n'
 
+"${compose[@]}" exec -T api python -c \
+  "import json,os,urllib.request; token=os.environ.get('FRP_RELAY_TIANSHU_TOKEN',''); assert len(token)>=32; request=urllib.request.Request('http://127.0.0.1:8010/api/dashboard',headers={'Authorization':'Bearer '+token,'X-Tianshu-User':'release-verifier@futurememetech.com','X-Tianshu-Role':'viewer'}); assert json.load(urllib.request.urlopen(request,timeout=5))['client_count']>=0"
+
 frps_version="$("${compose[@]}" exec -T frps frps --version)"
 if [ "$frps_version" != "0.68.1" ]; then
   echo "unexpected frps version: $frps_version" >&2
@@ -61,7 +64,11 @@ if ! cmp --silent "$script_dir/$expected_frps_config" /etc/deep-assess/frp-relay
   exit 1
 fi
 
-for status_file in /run/deepassess-openvpn/core.status /run/deepassess-openvpn/engine.status /run/deepassess-openvpn/backup.status; do
+for status_file in \
+  /run/deepassess-openvpn/core.status \
+  /run/deepassess-openvpn/engine.status \
+  /run/deepassess-openvpn/backup.status \
+  /run/deepassess-openvpn/futureheartguard.status; do
   if [ ! -r "$status_file" ]; then
     echo "OpenVPN status file is missing or unreadable: $status_file" >&2
     exit 1
