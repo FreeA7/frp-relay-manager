@@ -45,6 +45,9 @@ def test_reads_status_v3(monkeypatch, tmp_path: Path, status_text: str):
     assert result["tunnels"][2]["status"] == "unavailable"
     assert result["tunnels"][3]["id"] == "futureheartguard"
     assert result["tunnels"][3]["network"] == "10.254.0.24/29"
+    assert result["tunnels"][4]["id"] == "services"
+    assert result["tunnels"][4]["network"] == "10.254.0.32/29"
+    assert result["tunnels"][4]["status"] == "unavailable"
 
 
 def test_endpoint_requires_tianshu_operator(tmp_path: Path):
@@ -60,7 +63,7 @@ def test_endpoint_requires_tianshu_operator(tmp_path: Path):
         }
         response = client.get("/api/openvpn/status", headers=headers)
         assert response.status_code == 200
-        assert response.json()["tunnel_count"] == 4
+        assert response.json()["tunnel_count"] == 5
 
 
 class FrozenDateTime:

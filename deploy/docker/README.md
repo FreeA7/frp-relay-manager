@@ -12,7 +12,7 @@ returns 404 for ordinary paths on `panel.tunnel.freea7.fun`.
 - Generated frps configuration: `/etc/deep-assess/frp-relay/frps.toml` (`0644`)
 - SQLite data: `/var/lib/deep-assess/frp-relay` (`0700`, UID/GID `10001`)
 - frps logs: `/var/log/deep-assess/frps` (`0750`, UID/GID `10002`)
-- OpenVPN status files: `/run/deepassess-openvpn` (Core, Engine, Backup, and Future Heart Guard; read-only in the API container, group GID `10003`)
+- OpenVPN status files: `/run/deepassess-openvpn` (Core, Engine, Backup, Future Heart Guard, and Services; read-only in the API container, group GID `10003`)
 - Edge ingress source: `services/edge-ingress/` in the parent operations repository
 
 The protected environment must contain a distinct
@@ -68,7 +68,7 @@ docker compose up -d --remove-orphans
 ```
 
 Verify TLS, panel root and legacy login 404 responses, the Tianshu viewer
-contract, all four VPN status files, the restored client and forward counts,
+contract, all five VPN status files, the restored client and forward counts,
 and an isolated client.
 For `x-ui-cohost`, also
 confirm x-ui ports and containers remain healthy. Keep the old relay and a

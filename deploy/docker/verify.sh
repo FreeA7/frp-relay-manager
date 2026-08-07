@@ -98,11 +98,15 @@ for status_file in \
   /run/deepassess-openvpn/core.status \
   /run/deepassess-openvpn/engine.status \
   /run/deepassess-openvpn/backup.status \
-  /run/deepassess-openvpn/futureheartguard.status; do
+  /run/deepassess-openvpn/futureheartguard.status \
+  /run/deepassess-openvpn/services.status; do
   if [ ! -r "$status_file" ]; then
     echo "OpenVPN status file is missing or unreadable: $status_file" >&2
     exit 1
   fi
 done
+
+"${compose[@]}" exec -T api python -c \
+  "import json,os,urllib.request; token=os.environ['FRP_RELAY_TIANSHU_TOKEN']; request=urllib.request.Request('http://127.0.0.1:8010/api/openvpn/status',headers={'Authorization':'Bearer '+token,'X-Tianshu-User':'release-verifier@futurememetech.com','X-Tianshu-Role':'viewer'}); result=json.load(urllib.request.urlopen(request,timeout=5)); assert result['tunnel_count']==5; services=next(tunnel for tunnel in result['tunnels'] if tunnel['id']=='services'); assert services['network']=='10.254.0.32/29'"
 
 echo "Edge Gateway Docker verification passed: $deployment_profile"
